@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+
+  frontend:
+    build: ../smartsite-frontend
+    container_name: smartsite-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000
+    depends_on:
+      - backend
+
+  backend:
+    build: ../smartsite-backend/smartsite-backend
+    container_name: smartsite-backend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+      - keycloak
+    env_file:
+      - ../smartsite-backend/smartsite-backend/.env
+  mongodb:
+    image: mongo:7
+    container_name: smartsite-mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  postgres:
+    image: postgres:15
+    container_name: smartsite-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: smartsite
+      POSTGRES_PASSWORD: smartsite
+      POSTGRES_DB: keycloak_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.2
+    container_name: smartsite-keycloak
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: smartsite
+      KC_DB_PASSWORD: smartsite
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+volumes:
+  mongo_data:
+  postgres_data:
+  
+  
