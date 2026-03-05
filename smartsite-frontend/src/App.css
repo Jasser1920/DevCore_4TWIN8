@@ -64,7 +64,7 @@ select {
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 12px 14px;
-  background: rgba(10, 16, 24, 0.7);
+  background: #f9fafb;
   color: var(--text);
   font-size: 0.95rem;
 }
@@ -188,6 +188,17 @@ select:focus {
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 24px 16px;
+  }
+
+  .card,
+  .panel {
+    padding: 20px;
   }
 }
 

@@ -1,12 +1,16 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
-import { clearTokens, getAccessToken, getRefreshToken, getRolesFromToken } from '../lib/auth'
+import { clearTokens, getAccessToken, getRefreshToken, getRolesFromToken, getBusinessRoles } from '../lib/auth'
+import LoadingPage from '../components/LoadingPage'
 
 export default function RoleHome() {
+  const navigate = useNavigate()
   const [response, setResponse] = useState('')
   const [changePasswordUrl, setChangePasswordUrl] = useState('')
-  const roles = getRolesFromToken(getAccessToken())
+  const allRoles = getRolesFromToken(getAccessToken())
+  const roles = getBusinessRoles(allRoles)
 
   const meMutation = useMutation({
     mutationFn: async () => {
@@ -44,12 +48,19 @@ export default function RoleHome() {
     },
     onSettled: () => {
       clearTokens()
-      window.location.href = '/'
+      navigate('/login', { replace: true })
+      window.setTimeout(() => {
+        if (window.location.pathname !== '/login') {
+          window.location.replace('/login')
+        }
+      }, 50)
     },
   })
 
   return (
-    <div className="page">
+    <>
+      <LoadingPage isVisible={logoutMutation.isPending} />
+      <div className="page">
       <div className="card wide">
         <div className="card-header">
           <span className="eyebrow">SmartSite</span>
@@ -86,11 +97,12 @@ export default function RoleHome() {
         </div>
 
         <div className="section">
-          <button className="ghost" onClick={() => logoutMutation.mutate()}>
-            Log out
+          <button className="ghost" disabled={logoutMutation.isPending} onClick={() => logoutMutation.mutate()}>
+            {logoutMutation.isPending ? 'Logging out...' : 'Log out'}
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }

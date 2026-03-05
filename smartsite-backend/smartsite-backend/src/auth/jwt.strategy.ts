@@ -3,10 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import * as jwksRsa from 'jwks-rsa';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private config: ConfigService) {
+  constructor(
+    private config: ConfigService,
+    @InjectModel('User') private userModel: Model<any>,
+  ) {
     const keycloakUrl = config.get<string>('KEYCLOAK_URL') ?? '';
     const realm = config.get<string>('REALM') ?? '';
     const issuer = `${keycloakUrl}/realms/${realm}`;
@@ -27,6 +32,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    return payload;
+    // Fetch MongoDB user by keycloakId to include mongoId and role in request
+    const mongoUser = await this.userModel.findOne({ keycloakId: payload.sub });
+    
+    return {
+      ...payload,
+      mongoId: mongoUser?._id?.toString() || null,
+      role: mongoUser?.role || null,
+      email: mongoUser?.email || payload.email,
+      username: mongoUser?.username || payload.preferred_username,
+    };
   }
 }

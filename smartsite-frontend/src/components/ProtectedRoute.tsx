@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getAccessToken, getRolesFromToken } from '../lib/auth'
+import { getAccessToken, getRolesFromToken, getBusinessRoles } from '../lib/auth'
 
 type ProtectedRouteProps = {
   children: ReactNode
@@ -14,8 +14,9 @@ export default function ProtectedRoute({ children, requireRole }: ProtectedRoute
   }
 
   if (requireRole) {
-    const roles = getRolesFromToken(token)
-    if (!roles.includes(requireRole)) {
+    const allRoles = getRolesFromToken(token)
+    const businessRoles = getBusinessRoles(allRoles)
+    if (!businessRoles.includes(requireRole)) {
       return <Navigate to="/role" replace />
     }
   }
