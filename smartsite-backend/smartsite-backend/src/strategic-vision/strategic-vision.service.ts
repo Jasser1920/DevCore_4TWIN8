@@ -16,10 +16,50 @@ export class StrategicVisionService {
     private readonly activityLogsService: ActivityLogsService,
   ) {}
 
+  private isUserAssignedToCompany(user: any, company: Company): boolean {
+    const pmIds = Array.isArray(company.projectManagerIds)
+      ? [...company.projectManagerIds]
+      : [];
+
+    if (company.projectManagerId && !pmIds.includes(company.projectManagerId)) {
+      pmIds.push(company.projectManagerId);
+    }
+
+    if (user.role === 'DIRECTOR') {
+      return company.managerUserId === user.mongoId;
+    }
+
+    if (user.role === 'PROJECT_MANAGER') {
+      return pmIds.includes(user.mongoId);
+    }
+
+    return false;
+  }
+
+  private assertVisionAccess(user: any, company: Company) {
+    if (!['DIRECTOR', 'PROJECT_MANAGER'].includes(user.role)) {
+      throw new ForbiddenException('Only Director or Project Manager can manage strategic vision');
+    }
+
+    if (!this.isUserAssignedToCompany(user, company)) {
+      throw new ForbiddenException('You are not assigned to this company');
+    }
+  }
+
+  private assertDirectorValidationAccess(user: any, company: Company) {
+    if (user.role !== 'DIRECTOR') {
+      throw new ForbiddenException('Only Director can validate strategic vision');
+    }
+
+    if (company.managerUserId !== user.mongoId) {
+      throw new ForbiddenException('You can only validate strategic vision for your company');
+    }
+  }
+
   async createStrategicVision(
     companyId: string,
     dto: CreateStrategicVisionDto,
-    directorUserId: string,
+    reqUser: any,
     ipAddress: string,
     userAgent: string,
   ): Promise<StrategicVision> {
@@ -28,6 +68,8 @@ export class StrategicVisionService {
     if (!company) {
       throw new NotFoundException('Company not found');
     }
+
+    this.assertVisionAccess(reqUser, company);
 
     // Validate dates
     const startDate = new Date(dto.startDate);
@@ -93,7 +135,7 @@ export class StrategicVisionService {
       endDate,
       globalKPIs: dto.globalKPIs,
       status: StrategicVisionStatus.PENDING_VALIDATION,
-      directorUserId,
+      directorUserId: reqUser.sub,
       budgetCeiling,
     });
 
@@ -101,8 +143,8 @@ export class StrategicVisionService {
 
     // Log activity
     await this.activityLogsService.logActivity({
-      userId: directorUserId,
-      username: 'director', // Get from request if available
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email || 'user',
       action: 'STRATEGIC_VISION_CREATED',
       description: `Strategic vision created for ${company.name}`,
       details: {
@@ -135,7 +177,7 @@ export class StrategicVisionService {
   async updateStrategicVision(
     visionId: string,
     dto: UpdateStrategicVisionDto,
-    directorUserId: string,
+    reqUser: any,
     ipAddress: string,
     userAgent: string,
   ): Promise<StrategicVision> {
@@ -147,6 +189,8 @@ export class StrategicVisionService {
     if (!vision) {
       throw new NotFoundException('Strategic vision not found');
     }
+
+    this.assertVisionAccess(reqUser, vision.company);
 
     if (vision.status === StrategicVisionStatus.APPROVED) {
       throw new ForbiddenException('Cannot update an approved strategic vision');
@@ -214,8 +258,8 @@ export class StrategicVisionService {
 
     // Log activity
     await this.activityLogsService.logActivity({
-      userId: directorUserId,
-      username: 'director',
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email || 'user',
       action: 'STRATEGIC_VISION_UPDATED',
       description: `Strategic vision updated for ${vision.company.name}`,
       details: { visionId, changes: dto },
@@ -230,7 +274,7 @@ export class StrategicVisionService {
   async validateStrategicVision(
     visionId: string,
     dto: ValidateStrategicVisionDto,
-    directorUserId: string,
+    reqUser: any,
     ipAddress: string,
     userAgent: string,
   ): Promise<StrategicVision> {
@@ -243,6 +287,8 @@ export class StrategicVisionService {
       throw new NotFoundException('Strategic vision not found');
     }
 
+    this.assertDirectorValidationAccess(reqUser, vision.company);
+
     if (vision.status === StrategicVisionStatus.APPROVED) {
       throw new BadRequestException('Strategic vision is already approved');
     }
@@ -250,7 +296,7 @@ export class StrategicVisionService {
     const newStatus = dto.status === 'APPROVED' ? StrategicVisionStatus.APPROVED : StrategicVisionStatus.REJECTED;
 
     vision.status = newStatus;
-    vision.validatedByUserId = directorUserId;
+    vision.validatedByUserId = reqUser.sub;
     vision.validationNotes = dto.validationNotes || '';
     vision.validatedAt = new Date();
 
@@ -258,8 +304,8 @@ export class StrategicVisionService {
 
     // Log activity
     await this.activityLogsService.logActivity({
-      userId: directorUserId,
-      username: 'director',
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email || 'user',
       action: dto.status === 'APPROVED' ? 'STRATEGIC_VISION_APPROVED' : 'STRATEGIC_VISION_REJECTED',
       description: `Strategic vision ${dto.status.toLowerCase()} for ${vision.company.name}`,
       details: { visionId, notes: dto.validationNotes },

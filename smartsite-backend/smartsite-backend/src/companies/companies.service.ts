@@ -24,6 +24,20 @@ export class CompaniesService {
     });
   }
 
+  private normalizeProjectManagers(company: Company): Company {
+    const ids = Array.isArray(company.projectManagerIds)
+      ? [...company.projectManagerIds]
+      : [];
+
+    if (company.projectManagerId && !ids.includes(company.projectManagerId)) {
+      ids.push(company.projectManagerId);
+    }
+
+    company.projectManagerIds = ids;
+    company.projectManagerId = ids[0] || null;
+    return company;
+  }
+
   /* ==========================================
       Create Company (Super Admin Only)
   ========================================== */
@@ -66,9 +80,11 @@ export class CompaniesService {
   async getAllCompanies(): Promise<Company[]> {
     await this.purgeExpiredSuspendedCompanies();
 
-    return this.companyRepository.find({
+    const companies = await this.companyRepository.find({
       order: { createdAt: 'DESC' },
     });
+
+    return companies.map((company) => this.normalizeProjectManagers(company));
   }
 
   /* ==========================================
@@ -83,7 +99,7 @@ export class CompaniesService {
       throw new NotFoundException(`Company with ID ${id} not found`);
     }
 
-    return company;
+    return this.normalizeProjectManagers(company);
   }
 
   /* ==========================================
@@ -133,8 +149,42 @@ export class CompaniesService {
   async assignProjectManager(companyId: string, projectManagerId: string): Promise<Company> {
     const company = await this.getCompanyById(companyId);
 
-    company.projectManagerId = projectManagerId;
-    return this.companyRepository.save(company);
+    if (!projectManagerId) {
+      throw new BadRequestException('Project Manager ID is required');
+    }
+
+    const allCompanies = await this.companyRepository.find();
+    const alreadyAssignedCompany = allCompanies.find((existingCompany) => {
+      if (existingCompany.id === companyId) return false;
+      const normalizedCompany = this.normalizeProjectManagers(existingCompany);
+      return (normalizedCompany.projectManagerIds || []).includes(projectManagerId);
+    });
+
+    if (alreadyAssignedCompany) {
+      throw new ForbiddenException(
+        `Project Manager is already assigned to company ${alreadyAssignedCompany.name}`,
+      );
+    }
+
+    const normalized = this.normalizeProjectManagers(company);
+    const ids = new Set(normalized.projectManagerIds || []);
+    ids.add(projectManagerId);
+    normalized.projectManagerIds = Array.from(ids);
+    normalized.projectManagerId = normalized.projectManagerIds[0] || null;
+
+    return this.companyRepository.save(normalized);
+  }
+
+  async unassignProjectManager(companyId: string, projectManagerId: string): Promise<Company> {
+    const company = await this.getCompanyById(companyId);
+    const normalized = this.normalizeProjectManagers(company);
+
+    normalized.projectManagerIds = (normalized.projectManagerIds || []).filter(
+      (id) => id !== projectManagerId,
+    );
+    normalized.projectManagerId = normalized.projectManagerIds[0] || null;
+
+    return this.companyRepository.save(normalized);
   }
 
   /* ==========================================
@@ -156,5 +206,22 @@ export class CompaniesService {
       where: { managerUserId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async getCompanyByProjectManager(projectManagerUserId: string): Promise<Company | null> {
+    await this.purgeExpiredSuspendedCompanies();
+
+    const companies = await this.companyRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+
+    for (const company of companies) {
+      const normalized = this.normalizeProjectManagers(company);
+      if ((normalized.projectManagerIds || []).includes(projectManagerUserId)) {
+        return normalized;
+      }
+    }
+
+    return null;
   }
 }

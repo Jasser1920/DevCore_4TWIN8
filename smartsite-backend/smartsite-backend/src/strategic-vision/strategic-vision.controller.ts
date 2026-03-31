@@ -14,14 +14,13 @@ export class StrategicVisionController {
     @Body() dto: CreateStrategicVisionDto,
     @Request() req,
   ) {
-    const userId = req.user.sub; // Keycloak user ID
     const ipAddress = req.ip || 'UNKNOWN';
     const userAgent = req.get('user-agent') || 'UNKNOWN';
 
     const vision = await this.strategicVisionService.createStrategicVision(
       companyId,
       dto,
-      userId,
+      req.user,
       ipAddress,
       userAgent,
     );
@@ -48,14 +47,13 @@ export class StrategicVisionController {
     @Body() dto: UpdateStrategicVisionDto,
     @Request() req,
   ) {
-    const userId = req.user.sub;
     const ipAddress = req.ip || 'UNKNOWN';
     const userAgent = req.get('user-agent') || 'UNKNOWN';
 
     const vision = await this.strategicVisionService.updateStrategicVision(
       visionId,
       dto,
-      userId,
+      req.user,
       ipAddress,
       userAgent,
     );
@@ -72,7 +70,6 @@ export class StrategicVisionController {
     @Body() dto: ValidateStrategicVisionDto,
     @Request() req,
   ) {
-    const userId = req.user.sub;
     const ipAddress = req.ip || 'UNKNOWN';
     const userAgent = req.get('user-agent') || 'UNKNOWN';
 
@@ -83,7 +80,7 @@ export class StrategicVisionController {
     const vision = await this.strategicVisionService.validateStrategicVision(
       visionId,
       dto,
-      userId,
+      req.user,
       ipAddress,
       userAgent,
     );

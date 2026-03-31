@@ -11,6 +11,10 @@ import { StrategicVisionModule } from './strategic-vision/strategic-vision.modul
 import { Company } from './companies/company.entity';
 import { StrategicVision } from './strategic-vision/strategic-vision.entity';
 import { InitService } from './core/init.service';
+import { ProjectsModule } from './projects/projects.module';
+import { Project } from './projects/project.entity';
+import { ProjectValidationHistory } from './projects/project-validation-history.entity';
+import { Milestone } from './projects/milestone.entity';
 
 @Module({
   imports: [
@@ -26,7 +30,7 @@ import { InitService } from './core/init.service';
         username: configService.get('POSTGRES_USER', 'smartsite'),
         password: configService.get('POSTGRES_PASSWORD', 'smartsite'),
         database: configService.get('POSTGRES_DB', 'smartsite'),
-        entities: [Company, StrategicVision],
+        entities: [Company, StrategicVision, Project, ProjectValidationHistory, Milestone],
         synchronize: true,
         logging: false,
       }),
@@ -37,6 +41,7 @@ import { InitService } from './core/init.service';
     ActivityLogsModule,
     CompaniesModule,
     StrategicVisionModule,
+    ProjectsModule,
   ],
   providers: [InitService],
 })

@@ -4,7 +4,7 @@ import { useCompanies } from './useCompanies'
 import EditCompanyModal from './EditCompanyModal'
 import CompanyDetailModal from './CompanyDetailModal'
 import { exportCompaniesToPDF } from '../../../lib/pdfExport'
-import { Download, Edit, Trash, X } from 'lucide-react'
+import { Download, Edit, Trash } from 'lucide-react'
 
 interface Company {
   id: string

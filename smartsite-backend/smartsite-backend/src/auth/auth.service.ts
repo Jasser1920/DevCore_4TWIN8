@@ -75,6 +75,8 @@ export class AuthService {
     userAgent?: string,
   ) {
     try {
+      const normalizedUsername = (username || '').trim().replace(/^['\"]+|['\"]+$/g, '');
+
       // Only verify CAPTCHA if token is provided (skip for internal calls like updatePassword)
       if (captchaToken) {
         await this.verifyCaptchaToken(captchaToken, ipAddress);
@@ -85,19 +87,19 @@ export class AuthService {
       
       // ✅ LOOKUP USER BY USERNAME OR EMAIL
       // The login can use either username or email, so we need to check both
-      let user = await this.usersService.getUserByUsername(username);
+      let user = await this.usersService.getUserByUsername(normalizedUsername);
       
       // If not found by username, try to find by email
-      if (!user && username.includes('@')) {
-        console.log('🔍 Username contains @, trying to lookup by email:', username);
-        user = await this.usersService.getUserByEmail(username);
+      if (!user && normalizedUsername.includes('@')) {
+        console.log('🔍 Username contains @, trying to lookup by email:', normalizedUsername);
+        user = await this.usersService.getUserByEmail(normalizedUsername.toLowerCase());
       }
       
       // ✅ EMAIL VERIFICATION CHECK
       // This check must happen BEFORE Keycloak authentication
       // Rule: All users except SUPER_ADMIN must verify email before login
       console.log('🔐 LOGIN CHECK - User lookup:', {
-        identifier: username,
+        identifier: normalizedUsername,
         userExists: !!user,
         userUsername: user?.username,
         userEmail: user?.email,
@@ -112,7 +114,7 @@ export class AuthService {
         const isEmailNotVerifiedInDb = !user.isEmailVerified;
         
         console.log('🔍 EMAIL VERIFICATION CHECK:', {
-          loginIdentifier: username,
+          loginIdentifier: normalizedUsername,
           foundUsername: user.username,
           foundEmail: user.email,
           role: user.role,
@@ -125,7 +127,7 @@ export class AuthService {
         if (isEmailNotVerifiedInDb && isNonAdminUser) {
           const errorMsg = '❌ Please verify your email address before logging in. Check your email for the verification link.';
           console.error('🚫 BLOCKING LOGIN - Email not verified for non-admin user:', {
-            loginIdentifier: username,
+            loginIdentifier: normalizedUsername,
             foundUsername: user.username,
             role: user.role,
             isEmailVerified: user.isEmailVerified,
@@ -152,7 +154,7 @@ export class AuthService {
         // ⚠️ Case 2: User doesn't exist in MongoDB
         // This is a security issue - user can't be verified if not in DB
         // Don't allow login for non-admin users created outside the system
-        console.warn(`⚠️ User not found in MongoDB for login identifier: ${username}`);
+        console.warn(`⚠️ User not found in MongoDB for login identifier: ${normalizedUsername}`);
         console.warn('ℹ️ Allowing Keycloak to handle auth - user might exist outside MongoDB');
         // Note: We'll let this continue to Keycloak auth for now
         // If user is legitimate Keycloak user, they'll authenticate
@@ -165,7 +167,7 @@ export class AuthService {
       params.append('grant_type', 'password');
       params.append('client_id', this.config.get<string>('CLIENT_ID')!);
       params.append('client_secret', this.config.get<string>('CLIENT_SECRET')!);
-      params.append('username', username);
+      params.append('username', normalizedUsername);
       params.append('password', password);
 
       const response = await axios.post(url, params.toString(), {
@@ -173,9 +175,9 @@ export class AuthService {
       });
 
       // Log successful login (with fallback userId if user doesn't exist in MongoDB yet)
-      const userId = user?._id.toString() || `user-${username}`;
-      const actualUsername = user?.username || username; // Use actual username from DB if available
-      console.log('✅ LOGGED IN SUCCESSFULLY:', { userId, actualUsername, loginIdentifier: username, ipAddress });
+      const userId = user?._id.toString() || `user-${normalizedUsername}`;
+      const actualUsername = user?.username || normalizedUsername; // Use actual username from DB if available
+      console.log('✅ LOGGED IN SUCCESSFULLY:', { userId, actualUsername, loginIdentifier: normalizedUsername, ipAddress });
       await this.activityLogsService.logActivity({
         userId,
         username: actualUsername,

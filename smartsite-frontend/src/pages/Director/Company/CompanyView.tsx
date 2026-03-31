@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { apiFetch, getAvailableProjectManagers, assignProjectManager } from '../../../lib/api'
+import { apiFetch, getAvailableProjectManagers, assignProjectManager, unassignProjectManager } from '../../../lib/api'
 import { useResponsive } from '../../../hooks/useResponsive'
 import { exportCompanyDetailsToPDF } from '../../../lib/pdfExport'
 import { Button } from '../../../components/shared/UI'
@@ -29,8 +29,14 @@ export default function CompanyView() {
   })
 
   const projectManagers = projectManagersData?.data || []
+  const availableToAssign = projectManagers.filter((pm: any) => !pm.isAssignedGlobally)
   const selectedProjectManager = projectManagers.find((pm: any) => pm.id === selectedPmId)
-  const assignedProjectManager = projectManagers.find((pm: any) => pm.id === company?.projectManagerId)
+  const assignedPmIds = Array.isArray(company?.projectManagerIds)
+    ? company.projectManagerIds
+    : company?.projectManagerId
+    ? [company.projectManagerId]
+    : []
+  const assignedProjectManagers = projectManagers.filter((pm: any) => assignedPmIds.includes(pm.id))
 
   // Assign PM Mutation
   const assignPmMutation = useMutation({
@@ -41,6 +47,16 @@ export default function CompanyView() {
     onSuccess: () => {
       setShowPmAssignment(false)
       setSelectedPmId('')
+      window.location.reload()
+    },
+  })
+
+  const unassignPmMutation = useMutation({
+    mutationFn: async (projectManagerId: string) => {
+      if (!company?.id) throw new Error('Missing company data')
+      return unassignProjectManager(company.id, projectManagerId)
+    },
+    onSuccess: () => {
       window.location.reload()
     },
   })
@@ -180,7 +196,7 @@ export default function CompanyView() {
                 fontSize: buttonFontSize
               }}
             >
-              {company.projectManagerId ? 'Change PM' : 'Assign PM'}
+              Add Project Manager
             </Button>
           )}
         </div>
@@ -210,12 +226,17 @@ export default function CompanyView() {
                 }}
               >
                 <option value="">Select a Project Manager...</option>
-                {projectManagers.map((pm: any) => (
+                {availableToAssign.map((pm: any) => (
                   <option key={pm.id} value={pm.id}>
                     {pm.firstName} {pm.lastName} ({pm.email})
                   </option>
                 ))}
               </select>
+              {availableToAssign.length === 0 && (
+                <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#92400e' }}>
+                  All Project Managers are already assigned to other companies.
+                </p>
+              )}
             </div>
 
             {selectedProjectManager && (
@@ -283,43 +304,52 @@ export default function CompanyView() {
           </div>
         )}
 
-        {!showPmAssignment && company.projectManagerId && (
+        {!showPmAssignment && assignedPmIds.length > 0 && (
           <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #86efac' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#065f46', fontWeight: '600' }}>
-              Currently Assigned Project Manager
+              Assigned Project Managers
             </p>
-            {assignedProjectManager ? (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '10px' }}>
-                <div>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#6b7280' }}>Full Name</p>
-                  <p style={{ margin: 0, fontSize: '14px', color: '#1a1a1a', fontWeight: '600' }}>
-                    {assignedProjectManager.firstName} {assignedProjectManager.lastName}
-                  </p>
-                </div>
-                <div>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#6b7280' }}>Username</p>
-                  <p style={{ margin: 0, fontSize: '14px', color: '#1a1a1a', fontWeight: '600' }}>
-                    {assignedProjectManager.username || 'N/A'}
-                  </p>
-                </div>
-                <div style={{ gridColumn: isMobile ? '1' : 'span 2' }}>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#6b7280' }}>Email</p>
-                  <p style={{ margin: 0, fontSize: '14px', color: '#1a1a1a', fontWeight: '600' }}>
-                    {assignedProjectManager.email || 'N/A'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p style={{ margin: 0, fontSize: '14px', color: '#1a1a1a', fontWeight: '600' }}>
-                Project Manager ID: {company.projectManagerId}
-              </p>
-            )}
+            <div style={{ display: 'grid', gap: '10px' }}>
+              {assignedPmIds.map((pmId: string) => {
+                const pm = assignedProjectManagers.find((item: any) => item.id === pmId)
+                return (
+                  <div key={pmId} style={{
+                    border: '1px solid #bbf7d0',
+                    borderRadius: '8px',
+                    backgroundColor: 'white',
+                    padding: '10px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1a1a1a' }}>
+                        {pm ? `${pm.firstName} ${pm.lastName}` : `Project Manager ID: ${pmId}`}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                        {pm?.email || pm?.username || 'No details'}
+                      </div>
+                    </div>
+                    <Button
+                      variant="text"
+                      disabled={unassignPmMutation.isPending}
+                      onClick={() => unassignPmMutation.mutate(pmId)}
+                      style={{ color: '#b91c1c' }}
+                    >
+                      {unassignPmMutation.isPending ? 'Removing...' : 'Remove'}
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 
-        {!showPmAssignment && !company.projectManagerId && (
+        {!showPmAssignment && assignedPmIds.length === 0 && (
           <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '13px', padding: '16px' }}>
-            No Project Manager assigned yet. Click the button above to assign one.
+            No Project Managers assigned yet. Click the button above to add one.
           </div>
         )}
       </div>

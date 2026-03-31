@@ -158,9 +158,32 @@ export class CompaniesController {
     // Get all users with PROJECT_MANAGER role
     const allUsers = await this.usersService.getAllUsers();
     const projectManagers = allUsers.filter((u: any) => u.role === 'PROJECT_MANAGER');
+    const myCompanies = await this.companiesService.getCompaniesByManager(user.mongoId);
+    const myCompany = myCompanies[0] || null;
+
+    const allCompanies = await this.companiesService.getAllCompanies();
+    const pmAssignmentMap = new Map<string, { companyId: string; companyName: string }>();
+
+    for (const company of allCompanies) {
+      const assignedPmIds = (company.projectManagerIds || []).concat(
+        company.projectManagerId ? [company.projectManagerId] : [],
+      );
+
+      for (const assignedPmId of assignedPmIds) {
+        if (assignedPmId && !pmAssignmentMap.has(assignedPmId)) {
+          pmAssignmentMap.set(assignedPmId, {
+            companyId: company.id,
+            companyName: company.name,
+          });
+        }
+      }
+    }
 
     return {
       data: projectManagers.map((pm: any) => ({
+        ...(pmAssignmentMap.has(pm._id.toString())
+          ? { assignedCompany: pmAssignmentMap.get(pm._id.toString()) }
+          : { assignedCompany: null }),
         id: pm._id,
         username: pm.username,
         email: pm.email,
@@ -168,6 +191,9 @@ export class CompaniesController {
         lastName: pm.lastName,
         role: pm.role,
         isEmailVerified: pm.isEmailVerified,
+        isAssignedGlobally: pmAssignmentMap.has(pm._id.toString()),
+        isAssignedToMyCompany:
+          pmAssignmentMap.get(pm._id.toString())?.companyId === myCompany?.id,
       })),
       count: projectManagers.length,
     };
@@ -190,6 +216,28 @@ export class CompaniesController {
 
     return {
       data: companies[0] || null,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('my-assigned-company')
+  async getMyAssignedCompany(@Request() req: any) {
+    const user = req.user;
+
+    if (!['DIRECTOR', 'PROJECT_MANAGER'].includes(user.role)) {
+      throw new BadRequestException('Only DIRECTOR or PROJECT_MANAGER can access assigned company');
+    }
+
+    if (user.role === 'DIRECTOR') {
+      const companies = await this.companiesService.getCompaniesByManager(user.mongoId);
+      return {
+        data: companies[0] || null,
+      };
+    }
+
+    const company = await this.companiesService.getCompanyByProjectManager(user.mongoId);
+    return {
+      data: company,
     };
   }
 
@@ -365,14 +413,63 @@ export class CompaniesController {
       details: {
         companyId: updatedCompany.id,
         companyName: updatedCompany.name,
-        projectManagerId: body.projectManagerId,
+        assignedProjectManagerId: body.projectManagerId,
+        totalAssignedProjectManagers: (updatedCompany.projectManagerIds || []).length,
       },
       status: 'SUCCESS',
       ...this.getRequestMeta(req),
     });
 
     return {
-      message: 'Project Manager assigned successfully',
+      message: 'Project Manager added to company successfully',
+      data: updatedCompany,
+    };
+  }
+
+  /* ==========================================
+      Unassign Project Manager from Company (DIRECTOR Only)
+  ========================================== */
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id/unassign-project-manager/:projectManagerId')
+  async unassignProjectManager(
+    @Param('id') companyId: string,
+    @Param('projectManagerId') projectManagerId: string,
+    @Request() req: any,
+  ) {
+    const user = req.user;
+
+    if (user.role !== 'DIRECTOR') {
+      throw new BadRequestException('Only DIRECTOR can unassign project managers');
+    }
+
+    const companies = await this.companiesService.getCompaniesByManager(user.mongoId);
+    const isManagerOfCompany = companies.some((c) => c.id === companyId);
+    if (!isManagerOfCompany) {
+      throw new BadRequestException('You can only unassign project managers from your own company');
+    }
+
+    const updatedCompany = await this.companiesService.unassignProjectManager(
+      companyId,
+      projectManagerId,
+    );
+
+    await this.activityLogsService.logActivity({
+      userId: user.mongoId || user.sub,
+      username: user.preferred_username || user.username || user.email || 'director',
+      action: 'PM_UNASSIGNED',
+      description: `Project Manager removed from ${updatedCompany.name}`,
+      details: {
+        companyId: updatedCompany.id,
+        companyName: updatedCompany.name,
+        removedProjectManagerId: projectManagerId,
+        totalAssignedProjectManagers: (updatedCompany.projectManagerIds || []).length,
+      },
+      status: 'SUCCESS',
+      ...this.getRequestMeta(req),
+    });
+
+    return {
+      message: 'Project Manager removed from company successfully',
       data: updatedCompany,
     };
   }

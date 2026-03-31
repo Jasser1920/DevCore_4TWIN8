@@ -1,0 +1,11 @@
+        email:admin
+        password:Admin@123
+        email:director@smartsite.com
+        password: Director@123
+        email: pm@smartsite.com
+        password: ProjectManager@123
+        email: qhse@smartsite.com
+        password: QhseManager@123
+        email: client@smartsite.com
+        password: Client@123
+      

@@ -10,6 +10,9 @@ import Dashboard from './Dashboard'
 import CompanyView from './Company/CompanyView'
 import ActivityLogsView from './ActivityLogs/ActivityLogsView'
 import SettingsView from './Settings/SettingsView'
+import ValidationQueueView from './Validation/ValidationQueueView'
+import ProjectOverviewView from './Projects/ProjectOverviewView'
+import StrategicVisionValidationView from './StrategicVision/StrategicVisionValidationView'
 
 const Building2 = ({ style }: { style?: React.CSSProperties }) => (
   <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -33,6 +36,25 @@ const Settings = ({ style }: { style?: React.CSSProperties }) => (
   <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+)
+
+const ClipboardCheck = ({ style }: { style?: React.CSSProperties }) => (
+  <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+  </svg>
+)
+
+const FolderKanban = ({ style }: { style?: React.CSSProperties }) => (
+  <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h5l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h3m2 0h3m-8 3h5" />
+  </svg>
+)
+
+const Target = ({ style }: { style?: React.CSSProperties }) => (
+  <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-7.07l-2.83 2.83M9.76 14.24l-2.83 2.83m0-12.14l2.83 2.83m4.48 4.48l2.83 2.83M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 )
 
@@ -74,7 +96,10 @@ export default function Director() {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'project-overview', label: 'Project Overview', icon: FolderKanban },
+    { id: 'strategic-vision', label: 'Strategic Vision', icon: Target },
     { id: 'company', label: 'Company', icon: Building2 },
+    { id: 'validation', label: 'Validation Queue', icon: ClipboardCheck },
     { id: 'activity-logs', label: 'Activity Logs', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings }
   ]
@@ -83,10 +108,16 @@ export default function Director() {
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />
+      case 'project-overview':
+        return <ProjectOverviewView />
+      case 'strategic-vision':
+        return <StrategicVisionValidationView />
       case 'company':
         return <CompanyView />
       case 'activity-logs':
         return <ActivityLogsView />
+      case 'validation':
+        return <ValidationQueueView />
       case 'settings':
         return <SettingsView />
       default:

@@ -40,7 +40,10 @@ export class Company {
   managerUserId: string; // Director assigned as company manager (MongoDB ID)
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  projectManagerId: string; // Project Manager assigned by Director (MongoDB ID)
+  projectManagerId: string | null; // Legacy single PM field, kept for backward compatibility
+
+  @Column({ type: 'simple-json', nullable: true })
+  projectManagerIds: string[]; // Multiple Project Managers assigned by Director (MongoDB IDs)
 
   @Column({ type: 'bigint', default: 10737418240 }) // 10 GB in bytes
   storageQuota: number;
