@@ -53,7 +53,7 @@ export default function ValidationQueueView() {
         borderRadius: '12px',
         padding: isMobile ? '16px' : '20px',
         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-      }}>
+      }} data-tour="dir-validation-summary">
         <h2 style={{ margin: 0, fontSize: '20px', color: '#1f2937' }}>Validation Queue</h2>
         <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: '14px' }}>
           Submitted projects waiting for your decision.
@@ -81,7 +81,7 @@ export default function ValidationQueueView() {
 
       {!queueQuery.isLoading && !queueQuery.isError && projects.length > 0 && (
         <div style={{ display: 'grid', gap: '12px' }}>
-          {projects.map((project) => (
+          {projects.map((project, index) => (
             <div
               key={project.id}
               style={{
@@ -109,6 +109,7 @@ export default function ValidationQueueView() {
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                 <button
+                  data-tour={index === 0 ? 'dir-validation-approve' : undefined}
                   onClick={() => {
                     setDecisionState({ project, decision: 'APPROVE' })
                     setComment('')
@@ -126,6 +127,7 @@ export default function ValidationQueueView() {
                   Approve
                 </button>
                 <button
+                  data-tour={index === 0 ? 'dir-validation-reject' : undefined}
                   onClick={() => {
                     setDecisionState({ project, decision: 'REJECT' })
                     setComment('')

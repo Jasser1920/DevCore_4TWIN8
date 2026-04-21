@@ -42,25 +42,62 @@ interface UpdateCompanyData {
 export function useCompanies() {
   const queryClient = useQueryClient()
 
-  // Fetch companies list
   const companiesQuery = useQuery({
     queryKey: ['companies'],
     queryFn: async () => {
-      const data = await apiFetch<{ data: Company[] }>('/companies', { method: 'GET' })
-      return data.data
+      try {
+        const data = await apiFetch<any>('/companies', { method: 'GET' })
+        console.log('Companies API response:', data)
+        
+        if (Array.isArray(data)) {
+          console.log('Response is array, returning directly')
+          return data
+        }
+        if (data?.data && Array.isArray(data.data)) {
+          console.log('Response has .data property, returning that')
+          return data.data
+        }
+        if (data?.companies && Array.isArray(data.companies)) {
+          console.log('Response has .companies property, returning that')
+          return data.companies
+        }
+        console.warn('Could not extract array from response, returning empty array')
+        return []
+      } catch (error) {
+        console.error('Error fetching companies:', error)
+        return []
+      }
     },
   })
 
-  // Fetch available directors for manager selection
   const directorsQuery = useQuery({
     queryKey: ['directors'],
     queryFn: async () => {
-      const data = await apiFetch<{ data: Director[] }>('/companies/managers/available', { method: 'GET' })
-      return data.data
+      try {
+        const data = await apiFetch<any>('/companies/managers/available', { method: 'GET' })
+        console.log('Directors API response:', data)
+        
+        if (Array.isArray(data)) {
+          console.log('Response is array, returning directly')
+          return data
+        }
+        if (data?.data && Array.isArray(data.data)) {
+          console.log('Response has .data property, returning that')
+          return data.data
+        }
+        if (data?.directors && Array.isArray(data.directors)) {
+          console.log('Response has .directors property, returning that')
+          return data.directors
+        }
+        console.warn('Could not extract array from response, returning empty array')
+        return []
+      } catch (error) {
+        console.error('Error fetching directors:', error)
+        return []
+      }
     },
   })
 
-  // Create company
   const createCompanyMutation = useMutation({
     mutationFn: async (companyData: CreateCompanyData) => {
       return apiFetch<{ message: string }>('/companies', {
@@ -73,7 +110,6 @@ export function useCompanies() {
     },
   })
 
-  // Update company
   const updateCompanyMutation = useMutation({
     mutationFn: async ({ id, ...companyData }: UpdateCompanyData & { id: string }) => {
       return apiFetch(`/companies/${id}`, {
@@ -86,7 +122,6 @@ export function useCompanies() {
     },
   })
 
-  // Delete company
   const deleteCompanyMutation = useMutation({
     mutationFn: async (companyId: string) => {
       return apiFetch(`/companies/${companyId}`, {

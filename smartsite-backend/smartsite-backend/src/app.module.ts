@@ -15,11 +15,15 @@ import { ProjectsModule } from './projects/projects.module';
 import { Project } from './projects/project.entity';
 import { ProjectValidationHistory } from './projects/project-validation-history.entity';
 import { Milestone } from './projects/milestone.entity';
+import { QhseSiteReport } from './projects/qhse-site-report.entity';
+import { QhseCorrectiveAction } from './projects/qhse-corrective-action.entity';
+import { NotificationsModule, Notification } from './notifications';
+import { ApiUsageService } from './common/api-usage.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRoot('mongodb://localhost:27017/smartsite'),
+    MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://localhost:27017/smartsite'),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -30,7 +34,16 @@ import { Milestone } from './projects/milestone.entity';
         username: configService.get('POSTGRES_USER', 'smartsite'),
         password: configService.get('POSTGRES_PASSWORD', 'smartsite'),
         database: configService.get('POSTGRES_DB', 'smartsite'),
-        entities: [Company, StrategicVision, Project, ProjectValidationHistory, Milestone],
+        entities: [
+          Company,
+          StrategicVision,
+          Project,
+          ProjectValidationHistory,
+          Milestone,
+          QhseSiteReport,
+          QhseCorrectiveAction,
+          Notification,
+        ],
         synchronize: true,
         logging: false,
       }),
@@ -42,7 +55,8 @@ import { Milestone } from './projects/milestone.entity';
     CompaniesModule,
     StrategicVisionModule,
     ProjectsModule,
+    NotificationsModule,
   ],
-  providers: [InitService],
+  providers: [InitService, ApiUsageService],
 })
 export class AppModule {}

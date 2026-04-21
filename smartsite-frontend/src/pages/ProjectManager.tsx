@@ -1,6 +1,7 @@
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   apiFetch,
   createMilestone,
@@ -12,20 +13,29 @@ import {
   getStrategicVision,
   resubmitMilestone,
   resubmitProject,
+  resolveApiUrl,
   submitMilestone,
+  submitQhseSiteReport,
   submitProject,
+  uploadMilestoneAttachments,
   updateProject,
   type MilestoneItem,
   type ProjectItem,
 } from '../lib/api'
 import { clearTokens, getAccessToken, getRefreshToken, getRolesFromToken, getBusinessRoles } from '../lib/auth'
+import { getSubjectFromToken } from '../lib/auth'
 import { useResponsive } from '../hooks/useResponsive'
+import { useAccessibility } from '../contexts/AccessibilityContext'
 import LoadingPage from '../components/LoadingPage'
 import Sidebar from '../components/shared/Sidebar'
 import MetricCard from '../components/shared/UI/MetricCard'
 import { ActivityLogs } from '../components/ActivityLogs'
 import { Button } from '../components/shared/UI'
 import PMStrategicVisionView from './ProjectManager/PMStrategicVisionView'
+import NotificationsPanel from '../components/NotificationsPanel'
+import ProjectLocationPickerMap from '../components/shared/ProjectLocationPickerMap'
+import GuidedTourOverlay from '../components/shared/GuidedTourOverlay'
+import FloatingTutorialButton from '../components/shared/FloatingTutorialButton'
 
 const MAX_PM_ONGOING_PROJECTS = 3
 
@@ -54,18 +64,25 @@ const Settings = ({ style }: { style?: React.CSSProperties }) => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 )
-
 const Target = ({ style }: { style?: React.CSSProperties }) => (
   <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-7.07l-2.83 2.83M9.76 14.24l-2.83 2.83m0-12.14l2.83 2.83m4.48 4.48l2.83 2.83M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 )
 
+const Bell = ({ style }: { style?: React.CSSProperties }) => (
+  <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+  </svg>
+)
+
 export default function ProjectManager() {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const { isMobile, isTablet, isDesktop } = useResponsive()
   const roles = getBusinessRoles(getRolesFromToken(getAccessToken()))
+  const { settings } = useAccessibility()
   const [currentPage, setCurrentPage] = useState('dashboard')
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [form, setForm] = useState({
@@ -77,7 +94,12 @@ export default function ProjectManager() {
     currency: 'USD',
     startDate: '',
     endDate: '',
+    latitude: '',
+    longitude: '',
+    siteAddress: '',
   })
+  const [showMapPicker, setShowMapPicker] = useState(false)
+  const [showGuidedTour, setShowGuidedTour] = useState(false)
   const [pageMessage, setPageMessage] = useState('')
   const [pageError, setPageError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -89,6 +111,11 @@ export default function ProjectManager() {
     description: '',
     evidenceSummary: '',
   })
+  const [qhseReportSummary, setQhseReportSummary] = useState('')
+  const [qhseReportFiles, setQhseReportFiles] = useState<File[]>([])
+  const [qhseReportDropActive, setQhseReportDropActive] = useState(false)
+  const [milestoneEvidenceFiles, setMilestoneEvidenceFiles] = useState<File[]>([])
+  const [milestoneAttachmentDropActive, setMilestoneAttachmentDropActive] = useState(false)
 
   const projectsQuery = useQuery({
     queryKey: ['pm-projects'],
@@ -144,7 +171,21 @@ export default function ProjectManager() {
       currency: 'USD',
       startDate: '',
       endDate: '',
+      latitude: '',
+      longitude: '',
+      siteAddress: '',
     })
+    setMilestoneForm({
+      name: '',
+      plannedDate: '',
+      description: '',
+      evidenceSummary: '',
+    })
+    setQhseReportSummary('')
+    setQhseReportFiles([])
+    setQhseReportDropActive(false)
+    setMilestoneEvidenceFiles([])
+    setMilestoneAttachmentDropActive(false)
     setFieldErrors({})
     setTouchedFields({})
     setFocusedField('')
@@ -204,6 +245,25 @@ export default function ProjectManager() {
       }
     }
 
+    const latitude = Number(currentForm.latitude)
+    const longitude = Number(currentForm.longitude)
+
+    if (!currentForm.latitude.trim()) {
+      errors.latitude = 'Project location latitude is required'
+    } else if (Number.isNaN(latitude) || latitude < -90 || latitude > 90) {
+      errors.latitude = 'Latitude must be between -90 and 90'
+    }
+
+    if (!currentForm.longitude.trim()) {
+      errors.longitude = 'Project location longitude is required'
+    } else if (Number.isNaN(longitude) || longitude < -180 || longitude > 180) {
+      errors.longitude = 'Longitude must be between -180 and 180'
+    }
+
+    if (currentForm.siteAddress.trim().length > 255) {
+      errors.siteAddress = 'Site address cannot exceed 255 characters'
+    }
+
     return errors
   }
 
@@ -249,6 +309,9 @@ export default function ProjectManager() {
       currency: true,
       startDate: true,
       endDate: true,
+      latitude: true,
+      longitude: true,
+      siteAddress: true,
     })
 
     if (Object.keys(errors).length > 0) {
@@ -271,6 +334,9 @@ export default function ProjectManager() {
       currency: project.currency || 'USD',
       startDate: project.startDate ? new Date(project.startDate).toISOString().slice(0, 10) : '',
       endDate: project.endDate ? new Date(project.endDate).toISOString().slice(0, 10) : '',
+      latitude: project.latitude !== null && project.latitude !== undefined ? String(project.latitude) : '',
+      longitude: project.longitude !== null && project.longitude !== undefined ? String(project.longitude) : '',
+      siteAddress: project.siteAddress || '',
     })
     setFieldErrors({})
     setTouchedFields({})
@@ -289,6 +355,9 @@ export default function ProjectManager() {
         currency: form.currency.trim() || 'USD',
         startDate: form.startDate,
         endDate: form.endDate,
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+        siteAddress: form.siteAddress.trim() || undefined,
       }),
     onSuccess: (project) => {
       setPageMessage(`Project ${project.name} created as draft.`)
@@ -313,6 +382,9 @@ export default function ProjectManager() {
         currency: form.currency.trim() || 'USD',
         startDate: form.startDate,
         endDate: form.endDate,
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+        siteAddress: form.siteAddress.trim() || undefined,
       })
     },
     onSuccess: (project) => {
@@ -353,15 +425,20 @@ export default function ProjectManager() {
       if (!milestoneForm.name.trim()) throw new Error('Milestone name is required')
       if (!milestoneForm.plannedDate) throw new Error('Milestone planned date is required')
 
+      const evidenceAttachments = await uploadMilestoneAttachments(milestoneEvidenceFiles)
+
       return createMilestone(selectedProjectId, {
         name: milestoneForm.name.trim(),
         plannedDate: milestoneForm.plannedDate,
         description: milestoneForm.description.trim() || undefined,
+        evidenceAttachments,
       })
     },
     onSuccess: () => {
       setPageMessage('Milestone created successfully.')
       setPageError('')
+      setMilestoneEvidenceFiles([])
+      setMilestoneAttachmentDropActive(false)
       queryClient.invalidateQueries({ queryKey: ['project-milestones', selectedProjectId] })
     },
     onError: (error: Error) => {
@@ -373,14 +450,17 @@ export default function ProjectManager() {
   const submitMilestoneMutation = useMutation({
     mutationFn: async (milestone: MilestoneItem) => {
       const evidenceSummary = milestoneForm.evidenceSummary.trim() || undefined
+      const evidenceAttachments = await uploadMilestoneAttachments(milestoneEvidenceFiles)
       if (milestone.status === 'REJECTED_BY_CLIENT') {
-        return resubmitMilestone(milestone.id, { evidenceSummary })
+        return resubmitMilestone(milestone.id, { evidenceSummary, evidenceAttachments })
       }
-      return submitMilestone(milestone.id, { evidenceSummary })
+      return submitMilestone(milestone.id, { evidenceSummary, evidenceAttachments })
     },
     onSuccess: () => {
       setPageMessage('Milestone sent to client validation queue.')
       setPageError('')
+      setMilestoneEvidenceFiles([])
+      setMilestoneAttachmentDropActive(false)
       queryClient.invalidateQueries({ queryKey: ['project-milestones', selectedProjectId] })
     },
     onError: (error: Error) => {
@@ -389,14 +469,44 @@ export default function ProjectManager() {
     },
   })
 
+  const submitQhseReportMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedProjectId) throw new Error('Select a project first')
+      if (!selectedProject?.qhseManagerId) throw new Error('No QHSE manager is assigned to this project yet')
+      if (!qhseReportSummary.trim()) throw new Error('QHSE report summary is required')
+
+      const attachments = await uploadMilestoneAttachments(qhseReportFiles)
+      return submitQhseSiteReport(selectedProjectId, {
+        summary: qhseReportSummary.trim(),
+        attachments,
+      })
+    },
+    onSuccess: () => {
+      setPageMessage('QHSE site report submitted successfully.')
+      setPageError('')
+      setQhseReportSummary('')
+      setQhseReportFiles([])
+      setQhseReportDropActive(false)
+    },
+    onError: (error: Error) => {
+      setPageError(error.message || 'Failed to submit QHSE report')
+      setPageMessage('')
+    },
+  })
+
   const logoutMutation = useMutation({
     mutationFn: async () => {
       const refreshToken = getRefreshToken()
       if (!refreshToken) return
-      await apiFetch('/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify({ refreshToken }),
-      })
+      await Promise.race([
+        apiFetch('/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ refreshToken }),
+        }),
+        new Promise((_, reject) =>
+          window.setTimeout(() => reject(new Error('Logout request timed out')), 5000),
+        ),
+      ])
     },
     onSettled: () => {
       clearTokens()
@@ -432,11 +542,108 @@ export default function ProjectManager() {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'workspace', label: 'Projects Workspace', icon: FolderKanban },
     { id: 'strategic-vision', label: 'Strategic Vision', icon: Target },
     { id: 'activity-logs', label: 'Activity Logs', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ]
+
+  const guidedTourStepsByPage: Record<string, Array<{ selector: string; title: string; description: string }>> = {
+    dashboard: [
+      {
+        selector: '[data-tour="sidebar-nav-workspace"]',
+        title: 'Open Workspace',
+        description: 'Use Projects Workspace to create and manage project drafts.',
+      },
+      {
+        selector: '[data-tour="pm-page-dashboard"]',
+        title: 'Read Dashboard Metrics',
+        description: 'Track drafts, pending validation, and rejected projects from this summary page.',
+      },
+    ],
+    notifications: [
+      {
+        selector: '[data-tour="pm-page-notifications"]',
+        title: 'Manage Notifications',
+        description: 'Open notifications to review events and jump to related pages.',
+      },
+    ],
+    workspace: [
+      {
+        selector: '[data-tour="pm-project-name"]',
+        title: 'Step 1: Enter Project Name',
+        description: 'Type the project name to start creating a draft.',
+      },
+      {
+        selector: '[data-tour="pm-project-budget"]',
+        title: 'Step 2: Set Planned Budget',
+        description: 'Enter planned budget and make sure consumed value stays lower or equal.',
+      },
+      {
+        selector: '[data-tour="pm-project-dates"]',
+        title: 'Step 3: Select Dates',
+        description: 'Choose start and end dates. End date must be after start date.',
+      },
+      {
+        selector: '[data-tour="pm-project-map-open"]',
+        title: 'Step 4: Open Map',
+        description: 'Open the map and click on the exact construction site location.',
+      },
+      {
+        selector: '[data-tour="pm-project-create"]',
+        title: 'Step 5: Create Draft',
+        description: 'Click Create Draft to save and continue editing later if needed.',
+      },
+    ],
+    'strategic-vision': [
+      {
+        selector: '[data-tour="pm-page-strategic-vision"]',
+        title: 'Strategic Vision',
+        description: 'Monitor strategic vision status because submission is locked until approval.',
+      },
+    ],
+    'activity-logs': [
+      {
+        selector: '[data-tour="pm-page-activity-logs"]',
+        title: 'Review Activity Logs',
+        description: 'Check your latest actions and trace project lifecycle operations here.',
+      },
+    ],
+    settings: [
+      {
+        selector: '[data-tour="pm-page-settings"]',
+        title: 'Settings Area',
+        description: 'Use profile accessibility options to control guided tutorials per user.',
+      },
+    ],
+  }
+
+  const guidedTourSteps = guidedTourStepsByPage[currentPage] || []
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const view = params.get('view')
+    if (!view) return
+
+    const isValid = navItems.some((item) => item.id === view)
+    if (isValid) {
+      setCurrentPage(view)
+    }
+  }, [location.search])
+
+  useEffect(() => {
+    if (!settings.guidedTipsEnabled) return
+
+    const token = getAccessToken()
+    const subject = getSubjectFromToken(token) || 'anonymous'
+    const markerKey = `guided-tour-shown:${subject}:PROJECT_MANAGER:${currentPage}`
+
+    if (guidedTourSteps.length > 0 && !sessionStorage.getItem(markerKey)) {
+      setShowGuidedTour(true)
+      sessionStorage.setItem(markerKey, 'true')
+    }
+  }, [settings.guidedTipsEnabled, currentPage, guidedTourSteps.length])
 
   const sectionCardStyle: React.CSSProperties = {
     backgroundColor: 'white',
@@ -510,6 +717,7 @@ export default function ProjectManager() {
 
           <div style={{ display: 'grid', gap: '10px', marginBottom: '14px' }}>
             <input
+              data-tour="pm-project-name"
               placeholder="Project name"
               value={form.name}
               onChange={(event) => applyFieldChange('name', event.target.value)}
@@ -538,6 +746,7 @@ export default function ProjectManager() {
             {renderFieldError('description')}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px' }}>
               <input
+                data-tour="pm-project-budget"
                 type="number"
                 min="0"
                 placeholder="Budget planned"
@@ -594,6 +803,7 @@ export default function ProjectManager() {
                 style={getFieldStyle('currency')}
               />
               <input
+                data-tour="pm-project-dates"
                 type="date"
                 value={form.startDate}
                 onChange={(event) => applyFieldChange('startDate', event.target.value)}
@@ -615,10 +825,94 @@ export default function ProjectManager() {
               {renderFieldError('startDate') || <div />}
               {renderFieldError('endDate') || <div />}
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px' }}>
+              <input
+                type="number"
+                step="0.0000001"
+                placeholder="Latitude"
+                value={form.latitude}
+                onChange={(event) => applyFieldChange('latitude', event.target.value)}
+                onFocus={() => setFocusedField('latitude')}
+                onBlur={() => handleFieldBlur('latitude')}
+                style={getFieldStyle('latitude')}
+              />
+              <input
+                type="number"
+                step="0.0000001"
+                placeholder="Longitude"
+                value={form.longitude}
+                onChange={(event) => applyFieldChange('longitude', event.target.value)}
+                onFocus={() => setFocusedField('longitude')}
+                onBlur={() => handleFieldBlur('longitude')}
+                style={getFieldStyle('longitude')}
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px' }}>
+              {renderFieldError('latitude') || <div />}
+              {renderFieldError('longitude') || <div />}
+            </div>
+
+            <textarea
+              placeholder="Site address (optional)"
+              value={form.siteAddress}
+              onChange={(event) => applyFieldChange('siteAddress', event.target.value)}
+              onFocus={() => setFocusedField('siteAddress')}
+              onBlur={() => handleFieldBlur('siteAddress')}
+              style={{ ...getFieldStyle('siteAddress'), minHeight: '70px' }}
+            />
+            {renderFieldError('siteAddress')}
+
+            <div
+              style={{
+                border: '1px solid #dbeafe',
+                backgroundColor: '#f0f9ff',
+                borderRadius: '10px',
+                padding: '10px 12px',
+                display: 'flex',
+                gap: '8px',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ color: '#0c4a6e', fontSize: '13px' }}>
+                {form.latitude && form.longitude
+                  ? `Selected map location: ${Number(form.latitude).toFixed(6)}, ${Number(form.longitude).toFixed(6)}`
+                  : 'Select the exact construction site on map'}
+              </span>
+              <Button
+                data-tour="pm-project-map-open"
+                variant="secondary"
+                onClick={() => setShowMapPicker((prev) => !prev)}
+                style={{ minWidth: '140px' }}
+              >
+                {showMapPicker ? 'Hide Map' : 'Open Map'}
+              </Button>
+            </div>
+
+            {showMapPicker && (
+              <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
+                <ProjectLocationPickerMap
+                  latitude={form.latitude ? Number(form.latitude) : null}
+                  longitude={form.longitude ? Number(form.longitude) : null}
+                  onSelect={({ lat, lng }) => {
+                    setForm((prev) => ({ ...prev, latitude: String(lat), longitude: String(lng) }))
+                    setTouchedFields((prev) => ({ ...prev, latitude: true, longitude: true }))
+                    setFieldErrors((prev) => {
+                      const next = { ...prev }
+                      delete next.latitude
+                      delete next.longitude
+                      return next
+                    })
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <Button
+              data-tour="pm-project-create"
               variant="primary"
               disabled={createMutation.isPending}
               title="Create Draft stays available even when submission is locked"
@@ -865,6 +1159,124 @@ export default function ProjectManager() {
                     onChange={(event) => setMilestoneForm((prev) => ({ ...prev, evidenceSummary: event.target.value }))}
                     style={{ ...inputStyle, minHeight: '70px' }}
                   />
+                  <div
+                    onDragEnter={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setMilestoneAttachmentDropActive(true)
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setMilestoneAttachmentDropActive(true)
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setMilestoneAttachmentDropActive(false)
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setMilestoneAttachmentDropActive(false)
+                      setMilestoneEvidenceFiles((prev) => {
+                        const droppedFiles = Array.from(event.dataTransfer.files || [])
+                        return [...prev, ...droppedFiles].slice(0, 10)
+                      })
+                    }}
+                    style={{
+                      display: 'grid',
+                      gap: '8px',
+                      padding: '14px',
+                      borderRadius: '10px',
+                      border: milestoneAttachmentDropActive ? '1px dashed #0e7490' : '1px dashed #cbd5e1',
+                      backgroundColor: milestoneAttachmentDropActive ? '#ecfeff' : '#f8fafc',
+                      transition: 'background-color 0.15s ease, border-color 0.15s ease',
+                    }}
+                  >
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Evidence attachments</span>
+                    <label
+                      style={{
+                        display: 'grid',
+                        gap: '6px',
+                        alignItems: 'center',
+                        justifyItems: 'center',
+                        borderRadius: '8px',
+                        border: '1px solid #dbeafe',
+                        backgroundColor: 'white',
+                        padding: '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <strong style={{ fontSize: '13px', color: '#0f172a' }}>Drag & drop files here</strong>
+                      <span style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center' }}>
+                        Or click to browse images or PDF files. Up to 10 files.
+                      </span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*,.pdf"
+                        onChange={(event) => {
+                          setMilestoneEvidenceFiles((prev) => {
+                            const selectedFiles = Array.from(event.target.files || [])
+                            return [...prev, ...selectedFiles].slice(0, 10)
+                          })
+                          event.currentTarget.value = ''
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                      Files upload to the backend and are stored as attachments on the milestone.
+                    </div>
+                    {milestoneEvidenceFiles.length > 0 ? (
+                      <div style={{ display: 'grid', gap: '4px' }}>
+                        {milestoneEvidenceFiles.map((file, index) => (
+                          <div
+                            key={file.name + file.size + index}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '10px',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              backgroundColor: '#ffffff',
+                              border: '1px solid #e2e8f0',
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600, wordBreak: 'break-all' }}>
+                                {file.name}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                {file.type || 'unknown type'} · {Math.max(file.size / 1024, 1).toFixed(1)} KB
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMilestoneEvidenceFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))
+                              }
+                              style={{
+                                border: '1px solid #fecaca',
+                                backgroundColor: '#fff1f2',
+                                color: '#b91c1c',
+                                borderRadius: '999px',
+                                padding: '5px 9px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <Button
                     variant="secondary"
                     disabled={createMilestoneMutation.isPending}
@@ -902,6 +1314,22 @@ export default function ProjectManager() {
                             Client note: {milestone.clientValidationComment}
                           </div>
                         )}
+                        {milestone.evidenceAttachments && milestone.evidenceAttachments.length > 0 ? (
+                          <div style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Attachments</div>
+                            {milestone.evidenceAttachments.map((attachmentUrl) => (
+                              <a
+                                key={attachmentUrl}
+                                href={resolveApiUrl(attachmentUrl)}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ fontSize: '12px', color: '#0e7490', wordBreak: 'break-all' }}
+                              >
+                                {attachmentUrl}
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
                         {['PLANNED', 'REJECTED_BY_CLIENT'].includes(milestone.status) && (
                           <Button
                             variant="primary"
@@ -923,12 +1351,161 @@ export default function ProjectManager() {
               </>
             )}
           </div>
+
+          <div
+            style={{
+              ...sectionCardStyle,
+              padding: '20px',
+            }}
+          >
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', color: '#111827' }}>QHSE Site Report Submission</h3>
+            {!selectedProjectId && (
+              <p style={{ margin: 0, color: '#6b7280' }}>Select a project to submit a QHSE site report.</p>
+            )}
+
+            {selectedProjectId && !selectedProject?.qhseManagerId && (
+              <p style={{ margin: 0, color: '#92400e' }}>
+                This project has no assigned QHSE manager yet. Ask Director to assign QHSE before submitting reports.
+              </p>
+            )}
+
+            {selectedProjectId && selectedProject?.qhseManagerId ? (
+              <div style={{ display: 'grid', gap: '8px' }}>
+                <textarea
+                  placeholder="Write the site safety/security report summary for QHSE"
+                  value={qhseReportSummary}
+                  onChange={(event) => setQhseReportSummary(event.target.value)}
+                  style={{ ...inputStyle, minHeight: '90px' }}
+                />
+
+                <div
+                  onDragEnter={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setQhseReportDropActive(true)
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setQhseReportDropActive(true)
+                  }}
+                  onDragLeave={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setQhseReportDropActive(false)
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setQhseReportDropActive(false)
+                    setQhseReportFiles((prev) => {
+                      const droppedFiles = Array.from(event.dataTransfer.files || [])
+                      return [...prev, ...droppedFiles].slice(0, 10)
+                    })
+                  }}
+                  style={{
+                    display: 'grid',
+                    gap: '8px',
+                    padding: '14px',
+                    borderRadius: '10px',
+                    border: qhseReportDropActive ? '1px dashed #0e7490' : '1px dashed #cbd5e1',
+                    backgroundColor: qhseReportDropActive ? '#ecfeff' : '#f8fafc',
+                  }}
+                >
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>QHSE report attachments</span>
+                  <label
+                    style={{
+                      display: 'grid',
+                      gap: '6px',
+                      alignItems: 'center',
+                      justifyItems: 'center',
+                      borderRadius: '8px',
+                      border: '1px solid #dbeafe',
+                      backgroundColor: 'white',
+                      padding: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>Drag & drop files here</strong>
+                    <span style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center' }}>
+                      Or click to browse images or PDF files. Up to 10 files.
+                    </span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf"
+                      onChange={(event) => {
+                        setQhseReportFiles((prev) => {
+                          const selectedFiles = Array.from(event.target.files || [])
+                          return [...prev, ...selectedFiles].slice(0, 10)
+                        })
+                        event.currentTarget.value = ''
+                      }}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+
+                  {qhseReportFiles.length > 0 ? (
+                    <div style={{ display: 'grid', gap: '4px' }}>
+                      {qhseReportFiles.map((file, index) => (
+                        <div
+                          key={file.name + file.size + index}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #e2e8f0',
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600, wordBreak: 'break-all' }}>
+                              {file.name}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setQhseReportFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                            style={{
+                              border: '1px solid #fecaca',
+                              backgroundColor: '#fff1f2',
+                              color: '#b91c1c',
+                              borderRadius: '999px',
+                              padding: '5px 9px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <Button
+                  variant="primary"
+                  disabled={submitQhseReportMutation.isPending || !qhseReportSummary.trim()}
+                  onClick={() => submitQhseReportMutation.mutate()}
+                >
+                  {submitQhseReportMutation.isPending ? 'Submitting...' : 'Submit to QHSE'}
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
   )
 
   const renderDashboard = () => (
+    
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div
         style={{
@@ -964,7 +1541,7 @@ export default function ProjectManager() {
         <MetricCard title="Pending Validation" value={submittedCount} color="#9a3412" subtitle="Waiting Director decision" />
         <MetricCard title="Rejected" value={rejectedCount} color="#b91c1c" subtitle="Needs correction and resubmit" />
       </div>
-
+        
       <div
         style={{
           ...sectionCardStyle,
@@ -993,8 +1570,8 @@ export default function ProjectManager() {
           </Button>
         </div>
       </div>
-    </div>
-  )
+  </div>
+)
 
   const renderActivityLogs = () => (
     <div
@@ -1066,17 +1643,19 @@ export default function ProjectManager() {
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return renderDashboard()
+        return <div data-tour="pm-page-dashboard">{renderDashboard()}</div>
+      case 'notifications':
+        return <div data-tour="pm-page-notifications"><NotificationsPanel /></div>
       case 'workspace':
-        return renderWorkspace()
+        return <div data-tour="pm-page-workspace">{renderWorkspace()}</div>
       case 'strategic-vision':
-        return <PMStrategicVisionView />
+        return <div data-tour="pm-page-strategic-vision"><PMStrategicVisionView /></div>
       case 'activity-logs':
-        return renderActivityLogs()
+        return <div data-tour="pm-page-activity-logs">{renderActivityLogs()}</div>
       case 'settings':
-        return renderSettings()
+        return <div data-tour="pm-page-settings">{renderSettings()}</div>
       default:
-        return renderDashboard()
+        return <div data-tour="pm-page-dashboard">{renderDashboard()}</div>
     }
   }
 
@@ -1128,6 +1707,16 @@ export default function ProjectManager() {
             }}
           >
             {renderContent()}
+            <GuidedTourOverlay
+              isOpen={showGuidedTour}
+              steps={guidedTourSteps}
+              onClose={() => setShowGuidedTour(false)}
+            />
+            <FloatingTutorialButton
+              onClick={() => setShowGuidedTour(true)}
+              disabled={guidedTourSteps.length === 0}
+              title="Start Project Manager tutorial"
+            />
           </div>
         </div>
       </div>

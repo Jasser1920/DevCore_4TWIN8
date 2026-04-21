@@ -23,12 +23,14 @@ import AccountDeletionCard from '../components/Profile/AccountDeletionCard'
 import DeletionModal from '../components/Profile/DeletionModal'
 import ProfileDeviceManagement from '../components/Profile/ProfileDeviceManagement'
 import ProfileActivityLogs from '../components/Profile/ProfileActivityLogs'
+import { useAccessibility } from '../contexts/AccessibilityContext'
 
 export default function Profile() {
   const navigate = useNavigate()
   const { isMobile, isTablet } = useResponsive()
   const [currentPage, setCurrentPage] = useState('profile')
   const [showDeletionModal, setShowDeletionModal] = useState(false)
+  const { settings } = useAccessibility()
 
   // Use custom hooks for business logic
   const { profileData, isLoading, form, setForm, updateProfile, message, errorMessage } =
@@ -58,10 +60,15 @@ export default function Profile() {
     mutationFn: async () => {
       const refreshToken = getRefreshToken()
       if (!refreshToken) return
-      await apiFetch('/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify({ refreshToken }),
-      })
+      await Promise.race([
+        apiFetch('/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ refreshToken }),
+        }),
+        new Promise((_, reject) =>
+          window.setTimeout(() => reject(new Error('Logout request timed out')), 5000),
+        ),
+      ])
     },
     onSettled: () => {
       clearTokens()
@@ -230,6 +237,40 @@ export default function Profile() {
               error={passwordError}
               isMobile={isMobile}
             />
+
+            {/* Accessibility Preferences */}
+            <div
+              style={{
+                backgroundColor: 'white',
+                borderRadius: '12px',
+                padding: isMobile ? '20px' : '24px',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                marginBottom: '24px',
+              }}
+            >
+              <h3 style={{ margin: '0 0 8px', fontSize: '20px', color: '#1a1a1a' }}>Accessibility</h3>
+              <p style={{ margin: '0 0 14px', color: '#6b7280' }}>
+                These preferences are saved per user account and restored when you sign back in.
+              </p>
+              <p style={{ margin: '0 0 14px', color: '#374151', fontSize: '14px' }}>
+                Guided tutorials are currently {settings.guidedTipsEnabled ? 'enabled' : 'disabled'} for this account.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/accessibility')}
+                style={{
+                  border: 'none',
+                  borderRadius: '10px',
+                  backgroundColor: '#075B7A',
+                  color: 'white',
+                  padding: '12px 18px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+              >
+                Open Accessibility Page
+              </button>
+            </div>
 
             {/* Account Deletion Card */}
             <AccountDeletionCard

@@ -167,26 +167,30 @@ export default function CreateUserForm() {
           gap: '20px',
           marginBottom: '24px'
         }}>
-          <FormField
-            label="Username"
-            name="username"
-            value={form.username}
-            onChange={(value) => handleFieldChange('username', value)}
-            error={fieldErrors.username}
-            required
-            placeholder="john_director"
-          />
+          <div data-tour="sa-create-user-username">
+            <FormField
+              label="Username"
+              name="username"
+              value={form.username}
+              onChange={(value) => handleFieldChange('username', value)}
+              error={fieldErrors.username}
+              required
+              placeholder="john_director"
+            />
+          </div>
 
-          <FormField
-            label="Email"
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={(value) => handleFieldChange('email', value)}
-            error={fieldErrors.email}
-            required
-            placeholder="john@example.com"
-          />
+          <div data-tour="sa-create-user-email">
+            <FormField
+              label="Email"
+              name="email"
+              type="email"
+              value={form.email}
+              onChange={(value) => handleFieldChange('email', value)}
+              error={fieldErrors.email}
+              required
+              placeholder="john@example.com"
+            />
+          </div>
 
           <div>
             <label style={{
@@ -248,16 +252,18 @@ export default function CreateUserForm() {
             )}
           </div>
 
-          <FormField
-            label="Role"
-            name="role"
-            type="select"
-            value={form.role}
-            onChange={(value) => handleFieldChange('role', value)}
-            error={fieldErrors.role}
-            required
-            options={roles.map(role => ({ value: role, label: role }))}
-          />
+          <div data-tour="sa-create-user-role">
+            <FormField
+              label="Role"
+              name="role"
+              type="select"
+              value={form.role}
+              onChange={(value) => handleFieldChange('role', value)}
+              error={fieldErrors.role}
+              required
+              options={roles.map(role => ({ value: role, label: role }))}
+            />
+          </div>
 
           <FormField
             label="First Name"
@@ -308,14 +314,16 @@ export default function CreateUserForm() {
           </div>
         )}
 
-        <Button
-          type="submit"
-          loading={isCreating}
-          disabled={isCreating}
-          icon={UserPlus}
-        >
-          Create User
-        </Button>
+        <div data-tour="sa-create-user-submit">
+          <Button
+            type="submit"
+            loading={isCreating}
+            disabled={isCreating}
+            icon={UserPlus}
+          >
+            Create User
+          </Button>
+        </div>
       </form>
     </div>
   )

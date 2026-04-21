@@ -48,6 +48,9 @@ export class Milestone {
   @Column({ type: 'text', nullable: true })
   evidenceSummary: string;
 
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  evidenceAttachments: string[];
+
   @Column({ type: 'timestamp', nullable: true })
   submittedAt: Date;
 

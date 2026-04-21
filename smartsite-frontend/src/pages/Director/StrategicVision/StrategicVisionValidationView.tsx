@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { apiFetch, getStrategicVision, validateStrategicVision } from '../../../lib/api'
 import { useResponsive } from '../../../hooks/useResponsive'
 import { Button } from '../../../components/shared/UI'
+import { Status } from '../../../components/shared/UI'
 
 type StrategicVision = {
   id: string
@@ -24,6 +25,24 @@ function formatMoney(value: number, currency = 'USD') {
     currency,
     maximumFractionDigits: 2,
   }).format(Number(value || 0))
+}
+
+function getVisionStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    DRAFT: 'Draft',
+    PENDING_VALIDATION: 'Waiting for director validation',
+    APPROVED: 'Approved',
+    REJECTED: 'Rejected',
+  }
+
+  return labels[status] || status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function getVisionStatusTone(status: string): 'success' | 'error' | 'pending' | 'warning' | 'info' {
+  if (status === 'APPROVED') return 'success'
+  if (status === 'REJECTED') return 'error'
+  if (status === 'PENDING_VALIDATION') return 'pending'
+  return 'info'
 }
 
 export default function StrategicVisionValidationView() {
@@ -132,9 +151,12 @@ export default function StrategicVisionValidationView() {
               </div>
               <div>
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>Status</div>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: strategicVision.status === 'APPROVED' ? '#065f46' : strategicVision.status === 'REJECTED' ? '#991b1b' : '#92400e' }}>
-                  {strategicVision.status}
-                </div>
+                <Status
+                  type={getVisionStatusTone(strategicVision.status)}
+                  label={getVisionStatusLabel(strategicVision.status)}
+                  size="small"
+                  icon={false}
+                />
               </div>
             </div>
 
@@ -200,7 +222,7 @@ export default function StrategicVisionValidationView() {
 
             {!canValidate && (
               <p style={{ margin: 0, color: '#6b7280' }}>
-                This strategic vision is already {strategicVision.status.toLowerCase()} and cannot be validated again.
+                This strategic vision is already {getVisionStatusLabel(strategicVision.status).toLowerCase()} and cannot be validated again.
               </p>
             )}
 

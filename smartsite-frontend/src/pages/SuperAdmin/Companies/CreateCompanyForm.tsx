@@ -183,16 +183,18 @@ export default function CreateCompanyForm() {
           gap: '20px',
           marginBottom: '24px'
         }}>
-          <FormField
-            label="Company Name"
-            name="name"
-            type="text"
-            value={form.name}
-            onChange={(value) => handleFieldChange('name', value)}
-            placeholder="Enter company name"
-            error={fieldErrors.name}
-            required
-          />
+          <div data-tour="sa-create-company-name">
+            <FormField
+              label="Company Name"
+              name="name"
+              type="text"
+              value={form.name}
+              onChange={(value) => handleFieldChange('name', value)}
+              placeholder="Enter company name"
+              error={fieldErrors.name}
+              required
+            />
+          </div>
 
           <FormField
             label="Contact Name"
@@ -216,26 +218,28 @@ export default function CreateCompanyForm() {
             required
           />
 
-          <FormField
-            label="Assigned Director"
-            name="managerUserId"
-            type="select"
-            value={form.managerUserId}
-            onChange={(value) => handleFieldChange('managerUserId', value)}
-            options={[
-              { value: '', label: directorsLoading ? 'Loading directors...' : 'Select a director' },
-              ...directors.map(director => ({
-                value: director.id,
-                label: director.isEmailVerified 
-                  ? `${director.firstName} ${director.lastName} - Director` 
-                  : `${director.firstName} ${director.lastName} - Director (not verified)`,
-                disabled: !director.isEmailVerified
-              }))
-            ]}
-            error={fieldErrors.managerUserId}
-            required
-            disabled={directorsLoading}
-          />
+          <div data-tour="sa-create-company-director">
+            <FormField
+              label="Assigned Director"
+              name="managerUserId"
+              type="select"
+              value={form.managerUserId}
+              onChange={(value) => handleFieldChange('managerUserId', value)}
+              options={[
+                { value: '', label: directorsLoading ? 'Loading directors...' : 'Select a director' },
+                ...directors.map(director => ({
+                  value: director.id,
+                  label: director.isEmailVerified 
+                    ? `${director.firstName} ${director.lastName} - Director` 
+                    : `${director.firstName} ${director.lastName} - Director (not verified)`,
+                  disabled: !director.isEmailVerified
+                }))
+              ]}
+              error={fieldErrors.managerUserId}
+              required
+              disabled={directorsLoading}
+            />
+          </div>
         </div>
 
         <FormField
@@ -256,15 +260,17 @@ export default function CreateCompanyForm() {
           gap: '12px',
           justifyContent: 'flex-end'
         }}>
-          <Button
-            variant="primary"
-            type="submit"
-            icon={Building2}
-            loading={isCreating}
-            disabled={isCreating}
-          >
-            {isCreating ? 'Creating...' : 'Create Company'}
-          </Button>
+          <div data-tour="sa-create-company-submit">
+            <Button
+              variant="primary"
+              type="submit"
+              icon={Building2}
+              loading={isCreating}
+              disabled={isCreating}
+            >
+              {isCreating ? 'Creating...' : 'Create Company'}
+            </Button>
+          </div>
         </div>
       </form>
     </div>

@@ -9,13 +9,42 @@ import {
   startProject,
   type DirectorProjectOverviewItem,
   type DirectorProjectRisk,
+  getDirectorAvailableQhseManagers,
+  assignQhseToProject,
+  type DirectorQhseManagerItem,
 } from '../../../lib/api'
 import { useResponsive } from '../../../hooks/useResponsive'
+import { Status } from '../../../components/shared/UI'
 
 const riskColorMap: Record<DirectorProjectRisk, { bg: string; text: string; border: string }> = {
   LOW: { bg: '#ecfdf5', text: '#065f46', border: '#6ee7b7' },
   MEDIUM: { bg: '#fffbeb', text: '#92400e', border: '#fcd34d' },
   HIGH: { bg: '#fef2f2', text: '#991b1b', border: '#fca5a5' },
+}
+
+function getProjectStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    DRAFT: 'Draft',
+    SUBMITTED_FOR_VALIDATION: 'Waiting for director validation',
+    REJECTED: 'Rejected by director',
+    APPROVED: 'Approved by director',
+    ACTIVE: 'Active',
+    PLANNED: 'Planned',
+    SUBMITTED_FOR_CLIENT_VALIDATION: 'Waiting for client approval',
+    RESUBMITTED_FOR_CLIENT_VALIDATION: 'Resubmitted: waiting for client approval',
+    APPROVED_BY_CLIENT: 'Approved by client',
+    REJECTED_BY_CLIENT: 'Rejected by client',
+  }
+
+  return labels[status] || status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function getProjectStatusTone(status: string): 'success' | 'error' | 'pending' | 'warning' | 'info' {
+  if (['APPROVED', 'ACTIVE', 'APPROVED_BY_CLIENT'].includes(status)) return 'success'
+  if (['REJECTED', 'REJECTED_BY_CLIENT'].includes(status)) return 'error'
+  if (['SUBMITTED_FOR_VALIDATION', 'SUBMITTED_FOR_CLIENT_VALIDATION', 'RESUBMITTED_FOR_CLIENT_VALIDATION'].includes(status)) return 'pending'
+  if (status === 'DRAFT' || status === 'PLANNED') return 'info'
+  return 'warning'
 }
 
 function formatMoney(value: number, currency: string) {
@@ -45,6 +74,23 @@ export default function ProjectOverviewView() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [selectedClientId, setSelectedClientId] = useState<string>('')
   const [startConfirmation, setStartConfirmation] = useState<string | null>(null)
+  const [selectedQhseManagerId, setSelectedQhseManagerId] = useState<string>('')
+  const qhseManagersQuery = useQuery({
+    queryKey: ['director-available-qhse-managers'],
+    queryFn: getDirectorAvailableQhseManagers,
+  })
+  const qhseManagers = qhseManagersQuery.data || []
+
+  const assignQhseMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedProjectId) throw new Error('Select a project first')
+      if (!selectedQhseManagerId) throw new Error('Select a QHSE manager first')
+      return assignQhseToProject(selectedProjectId, selectedQhseManagerId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['director-active-overview'] })
+    },
+  })
 
   const overviewQuery = useQuery({
     queryKey: ['director-active-overview', page, pageSize, status, risk, search, sortBy, sortOrder],
@@ -107,6 +153,14 @@ export default function ProjectOverviewView() {
   })
 
   const resetToFirstPage = () => setPage(1)
+
+  // Helper to get QHSE manager name by ID
+  const getQhseManagerName = (qhseManagerId?: string | null) => {
+    if (!qhseManagerId) return null;
+    const manager = qhseManagers.find((m) => m.id === qhseManagerId);
+    if (!manager) return qhseManagerId; // fallback to ID if not found
+    return `${manager.firstName || ''} ${manager.lastName || ''}`.trim() || manager.username || manager.email || qhseManagerId;
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -250,6 +304,7 @@ export default function ProjectOverviewView() {
                       <th style={{ padding: '10px', borderBottom: '1px solid #e5e7eb' }}>Status</th>
                       <th style={{ padding: '10px', borderBottom: '1px solid #e5e7eb' }}>PM</th>
                       <th style={{ padding: '10px', borderBottom: '1px solid #e5e7eb' }}>Client</th>
+                      <th style={{ padding: '10px', borderBottom: '1px solid #e5e7eb' }}>QHSE Manager</th>
                       <th style={{ padding: '10px', borderBottom: '1px solid #e5e7eb' }}>Budget %</th>
                       <th style={{ padding: '10px', borderBottom: '1px solid #e5e7eb' }}>Progress</th>
                       <th style={{ padding: '10px', borderBottom: '1px solid #e5e7eb' }}>Risk</th>
@@ -258,7 +313,7 @@ export default function ProjectOverviewView() {
                   </thead>
                   <tbody>
                     {projectRows.map((project) => {
-                      const riskStyle = riskColorMap[project.risk]
+                      const riskStyle = riskColorMap[project.risk];
                       return (
                         <tr
                           key={project.id}
@@ -272,7 +327,14 @@ export default function ProjectOverviewView() {
                             <div style={{ fontWeight: 600 }}>{project.name}</div>
                             <div style={{ color: '#6b7280' }}>{project.code}</div>
                           </td>
-                          <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>{project.status}</td>
+                          <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
+                            <Status
+                              type={getProjectStatusTone(project.status)}
+                              label={getProjectStatusLabel(project.status)}
+                              size="small"
+                              icon={false}
+                            />
+                          </td>
                           <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
                             <div style={{ fontWeight: 600 }}>{project.projectManagerName}</div>
                             <div style={{ color: '#6b7280' }}>{project.projectManagerEmail}</div>
@@ -287,11 +349,19 @@ export default function ProjectOverviewView() {
                               <span style={{ color: '#64748b' }}>Not assigned</span>
                             )}
                           </td>
-                          <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
-                            {formatPercent(project.budgetConsumptionPercent)}
+                           <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
+                            {project.qhseManagerId ? (
+                              <span>{getQhseManagerName(project.qhseManagerId)}</span>
+                            ) : (
+                              <span style={{ color: '#64748b' }}>Not assigned</span>
+                            )}
                           </td>
+                         
                           <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
                             {formatPercent(project.progressPercent)}
+                          </td>
+                          <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
+                            {formatPercent(project.budgetConsumptionPercent)}
                           </td>
                           <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
                             <span
@@ -311,7 +381,7 @@ export default function ProjectOverviewView() {
                             {new Date(project.lastUpdatedAt).toLocaleString()}
                           </td>
                         </tr>
-                      )
+                      );
                     })}
                   </tbody>
                 </table>
@@ -365,54 +435,105 @@ export default function ProjectOverviewView() {
       >
         <h3 style={{ marginTop: 0, marginBottom: '10px' }}>Project Financial KPIs</h3>
 
-        <div style={{ marginBottom: '14px', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '12px' }}>
-          <h4 style={{ margin: '0 0 8px', fontSize: '14px', color: '#1f2937' }}>Assign Client To Project</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr auto', gap: '8px' }}>
-            <select
-              value={selectedClientId}
-              onChange={(event) => setSelectedClientId(event.target.value)}
-              disabled={!selectedProjectId || clientsQuery.isLoading || assignClientMutation.isPending}
-              style={{ border: '1px solid #d1d5db', borderRadius: '8px', padding: '10px' }}
-            >
-              <option value="">Select client</option>
-              {clients.map((client: DirectorClientItem) => (
-                <option key={client.id} value={client.id}>
-                  {`${client.firstName || ''} ${client.lastName || ''}`.trim() || client.username} ({client.email})
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => assignClientMutation.mutate()}
-              disabled={!selectedProjectId || !selectedClientId || assignClientMutation.isPending}
-              style={{
-                backgroundColor: '#075B7A',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '8px 16px',
-                fontSize: '14px',
-                fontWeight: 600,
-                cursor:
-                  !selectedProjectId || !selectedClientId || assignClientMutation.isPending
-                    ? 'not-allowed'
-                    : 'pointer',
-                opacity: !selectedProjectId || !selectedClientId || assignClientMutation.isPending ? 0.7 : 1,
-              }}
-            >
-              {assignClientMutation.isPending ? 'Assigning...' : 'Assign Client'}
-            </button>
-          </div>
-          {assignClientMutation.isError && (
-            <p style={{ margin: '8px 0 0', color: '#b91c1c', fontSize: '12px' }}>
-              {(assignClientMutation.error as Error).message || 'Failed to assign client'}
-            </p>
-          )}
-          {selectedProject && (
-            <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: '12px' }}>
-              Current client: {selectedProject.clientName || 'Not assigned'}
-            </p>
-          )}
-        </div>
+        {selectedProjectId && selectedProject && (
+          <>
+            {/* Client Assignment Section */}
+            <div style={{ marginBottom: '14px', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '12px' }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: '14px', color: '#1f2937' }}>Assign Client To Project</h4>
+              {selectedProject.clientUserId ? (
+                <p style={{ color: '#64748b', fontSize: '12px', margin: 0 }}>
+                  Client assigned: {selectedProject.clientName || 'N/A'} ({selectedProject.clientEmail || 'N/A'})
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr auto', gap: '8px' }}>
+                  <select
+                    value={selectedClientId}
+                    onChange={(event) => setSelectedClientId(event.target.value)}
+                    disabled={clientsQuery.isLoading || assignClientMutation.isPending}
+                    style={{ border: '1px solid #d1d5db', borderRadius: '8px', padding: '10px' }}
+                  >
+                    <option value="">Select client</option>
+                    {clients.map((client: DirectorClientItem) => (
+                      <option key={client.id} value={client.id}>
+                        {`${client.firstName || ''} ${client.lastName || ''}`.trim() || client.username} ({client.email})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => assignClientMutation.mutate()}
+                    disabled={!selectedClientId || assignClientMutation.isPending}
+                    style={{
+                      backgroundColor: '#075B7A',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 16px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: !selectedClientId || assignClientMutation.isPending ? 'not-allowed' : 'pointer',
+                      opacity: !selectedClientId || assignClientMutation.isPending ? 0.7 : 1,
+                    }}
+                  >
+                    {assignClientMutation.isPending ? 'Assigning...' : 'Assign Client'}
+                  </button>
+                </div>
+              )}
+              {assignClientMutation.isError && (
+                <p style={{ margin: '8px 0 0', color: '#b91c1c', fontSize: '12px' }}>
+                  {(assignClientMutation.error as Error).message || 'Failed to assign client'}
+                </p>
+              )}
+            </div>
+
+            {/* QHSE Manager Assignment Section */}
+            <div style={{ marginBottom: '14px', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '12px' }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: '14px', color: '#1f2937' }}>Assign QHSE Manager To Project</h4>
+              {selectedProject.qhseManagerId ? (
+                <p style={{ color: '#64748b', fontSize: '12px', margin: 0 }}>
+                  QHSE manager assigned: <span style={{ fontWeight: 600 }}>{getQhseManagerName(selectedProject.qhseManagerId)}</span>
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr auto', gap: '8px' }}>
+                  <select
+                    value={selectedQhseManagerId}
+                    onChange={(event) => setSelectedQhseManagerId(event.target.value)}
+                    disabled={qhseManagersQuery.isLoading || assignQhseMutation.isPending}
+                    style={{ border: '1px solid #d1d5db', borderRadius: '8px', padding: '10px' }}
+                  >
+                    <option value="">Select QHSE manager</option>
+                    {qhseManagers.map((qhse: DirectorQhseManagerItem) => (
+                      <option key={qhse.id} value={qhse.id}>
+                        {`${qhse.firstName || ''} ${qhse.lastName || ''}`.trim() || qhse.username} ({qhse.email})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => assignQhseMutation.mutate()}
+                    disabled={!selectedQhseManagerId || assignQhseMutation.isPending}
+                    style={{
+                      backgroundColor: '#075B7A',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 16px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: !selectedQhseManagerId || assignQhseMutation.isPending ? 'not-allowed' : 'pointer',
+                      opacity: !selectedQhseManagerId || assignQhseMutation.isPending ? 0.7 : 1,
+                    }}
+                  >
+                    {assignQhseMutation.isPending ? 'Assigning...' : 'Assign QHSE'}
+                  </button>
+                </div>
+              )}
+              {assignQhseMutation.isError && (
+                <p style={{ margin: '8px 0 0', color: '#b91c1c', fontSize: '12px' }}>
+                  {(assignQhseMutation.error as Error).message || 'Failed to assign QHSE manager'}
+                </p>
+              )}
+            </div>
+          </>
+        )}
 
         {!selectedProjectId && (
           <p style={{ margin: 0, color: '#6b7280' }}>Select a project from the overview to display financial KPIs.</p>
@@ -554,16 +675,16 @@ function KpiCard({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ProjectCard({
-  project,
-  onSelect,
-  selected,
-}: {
-  project: DirectorProjectOverviewItem
-  onSelect: () => void
-  selected: boolean
-}) {
-  const riskStyle = riskColorMap[project.risk]
+function ProjectCard({ project, onSelect, selected }: { project: DirectorProjectOverviewItem; onSelect: () => void; selected: boolean }) {
+  const riskStyle = riskColorMap[project.risk];
+  // Use qhseManagers from closure (from parent component)
+  const qhseManagers = (typeof window !== 'undefined' && window.qhseManagers) || [];
+  const getQhseManagerName = (qhseManagerId?: string | null) => {
+    if (!qhseManagerId) return null;
+    const manager = qhseManagers.find((m: any) => m.id === qhseManagerId);
+    if (!manager) return qhseManagerId;
+    return `${manager.firstName || ''} ${manager.lastName || ''}`.trim() || manager.username || manager.email || qhseManagerId;
+  };
   return (
     <button
       onClick={onSelect}
@@ -579,7 +700,14 @@ function ProjectCard({
       <div style={{ fontWeight: 600, color: '#0f172a' }}>{project.name}</div>
       <div style={{ marginTop: '2px', fontSize: '12px', color: '#64748b' }}>{project.code}</div>
       <div style={{ marginTop: '8px', fontSize: '12px', color: '#334155' }}>
-        Status: {project.status} | PM: {project.projectManagerName}
+        Status:{' '}
+        <Status
+          type={getProjectStatusTone(project.status)}
+          label={getProjectStatusLabel(project.status)}
+          size="small"
+          icon={false}
+        />{' '}
+        | PM: {project.projectManagerName}
       </div>
       <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>{project.projectManagerEmail}</div>
       <div style={{ marginTop: '4px', fontSize: '12px', color: '#334155' }}>
@@ -603,6 +731,9 @@ function ProjectCard({
           {project.risk}
         </span>
       </div>
+      <div style={{ marginTop: '6px', fontSize: '12px', color: '#334155' }}>
+        QHSE Manager: {project.qhseManagerId ? getQhseManagerName(project.qhseManagerId) : 'Not assigned'}
+      </div>
     </button>
-  )
+  );
 }

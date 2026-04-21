@@ -1,9 +1,12 @@
+
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { join } from 'path';
+import { promises as fs } from 'fs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Project, ProjectStatus } from './project.entity';
@@ -23,6 +26,19 @@ import { CreateMilestoneDto } from './dto/create-milestone.dto';
 import { SubmitMilestoneDto } from './dto/submit-milestone.dto';
 import { ClientValidateMilestoneDto } from './dto/client-validate-milestone.dto';
 import { AssignClientDto } from './dto/assign-client.dto';
+import { AssignQhseDto } from './dto/assign-qhse.dto';
+import { SubmitQhseReportDto } from './dto/submit-qhse-report.dto';
+import { ReviewQhseReportDto } from './dto/review-qhse-report.dto';
+import { QhseSiteReport, QhseSiteReportStatus } from './qhse-site-report.entity';
+import {
+  QhseCorrectiveAction,
+  QhseCorrectiveActionPriority,
+  QhseCorrectiveActionStatus,
+  QhseFindingSeverity,
+} from './qhse-corrective-action.entity';
+import { CreateQhseCorrectiveActionsDto } from './dto/create-qhse-corrective-actions.dto';
+import { UpdateQhseCorrectiveActionDto } from './dto/update-qhse-corrective-action.dto';
+import { RunQhseEscalationDto } from './dto/run-qhse-escalation.dto';
 
 type ProjectRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 type ProjectOverviewSortBy = 'lastUpdatedAt' | 'risk' | 'budgetConsumptionPercent';
@@ -43,6 +59,10 @@ export class ProjectsService {
     private readonly strategicVisionRepo: Repository<StrategicVision>,
     @InjectRepository(Milestone)
     private readonly milestonesRepo: Repository<Milestone>,
+    @InjectRepository(QhseSiteReport)
+    private readonly qhseReportsRepo: Repository<QhseSiteReport>,
+    @InjectRepository(QhseCorrectiveAction)
+    private readonly qhseCorrectiveActionsRepo: Repository<QhseCorrectiveAction>,
     private readonly activityLogsService: ActivityLogsService,
     private readonly usersService: UsersService,
   ) {}
@@ -56,7 +76,39 @@ export class ProjectsService {
       );
     }
   }
-
+  async getStorageUsage(): Promise<{ used: number; total: number }> {
+  // Example: Calculate used storage in uploads/milestone-evidence
+  const uploadsDir = join(process.cwd(), 'uploads', 'milestone-evidence');
+  let used = 0;
+  try {
+    const files = await fs.readdir(uploadsDir);
+    for (const file of files) {
+      const stat = await fs.stat(join(uploadsDir, file));
+      if (stat.isFile()) used += stat.size;
+    }
+  } catch {
+    used = 0;
+  }
+  const total = 10 * 1024 * 1024 * 1024; // 10 GB
+  return { used, total };
+}
+async getRevenueByMonth(): Promise<{ label: string, value: number }[]> {
+  // TODO: Replace with real calculation logic from your DB
+  // Example static data for the last 6 months
+  return [
+    { label: '2026-01', value: 12000 },
+    { label: '2026-02', value: 15000 },
+    { label: '2026-03', value: 18000 },
+    { label: '2026-04', value: 21000 },
+    { label: '2026-05', value: 17000 },
+    { label: '2026-06', value: 20000 },
+  ];
+}
+async getGrowth(): Promise<number> {
+  // TODO: Replace with real calculation logic
+  // Example: return percentage growth this month
+  return 15; // 15% as a placeholder
+}
   private async assertPmPipelineCapacity(projectManagerId: string) {
     const ongoingProjects = await this.projectsRepo.find({
       where: {
@@ -87,7 +139,9 @@ export class ProjectsService {
       throw new BadRequestException('Consumed budget cannot exceed planned budget');
     }
   }
-
+  async getProjectsCount(): Promise<number> {
+    return this.projectsRepo.count();
+  }
   private async ensurePmCompany(mongoUserId: string): Promise<Company> {
     const companies = await this.companiesRepo.find();
     const company = companies.find((item) => {
@@ -201,25 +255,26 @@ export class ProjectsService {
         }
       : null;
 
-    return {
-      id: project.id,
-      name: project.name,
-      code: project.code,
-      status: project.status,
-      projectManagerId: project.projectManagerId,
-      projectManagerName: pmProfile.displayName,
-      projectManagerEmail: pmProfile.email,
-      clientUserId: project.clientUserId || null,
-      clientName: clientProfile?.displayName || null,
-      clientEmail: clientProfile?.email || null,
-      budgetConsumptionPercent,
-      progressPercent,
-      risk,
-      lastUpdatedAt: project.updatedAt,
-      budgetPlanned,
-      budgetConsumed,
-      currency: project.currency || 'USD',
-    };
+      return {
+        id: project.id,
+        name: project.name,
+        code: project.code,
+        status: project.status,
+        projectManagerId: project.projectManagerId,
+        projectManagerName: pmProfile.displayName,
+        projectManagerEmail: pmProfile.email,
+        clientUserId: project.clientUserId || null,
+        clientName: clientProfile?.displayName || null,
+        clientEmail: clientProfile?.email || null,
+        qhseManagerId: project.qhseManagerId || null,
+        budgetConsumptionPercent,
+        progressPercent,
+        risk,
+        lastUpdatedAt: project.updatedAt,
+        budgetPlanned,
+        budgetConsumed,
+        currency: project.currency || 'USD',
+      };
   }
 
   private sortOverviewRows(
@@ -269,6 +324,15 @@ export class ProjectsService {
     return this.historyRepo.save(entry);
   }
 
+  private normalizeEvidenceAttachments(value?: string[] | null) {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((item) => item.length > 0)
+      .slice(0, 20);
+  }
+
   private makeProjectCode(companyName: string, count: number): string {
     const prefix = companyName
       .replace(/[^A-Za-z0-9]/g, '')
@@ -302,6 +366,9 @@ export class ProjectsService {
       currency: dto.currency || 'USD',
       startDate,
       endDate,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      siteAddress: dto.siteAddress?.trim() || '',
       status: ProjectStatus.DRAFT,
     });
 
@@ -351,6 +418,7 @@ export class ProjectsService {
       ...dto,
       startDate: nextStart,
       endDate: nextEnd,
+      siteAddress: dto.siteAddress?.trim() || project.siteAddress,
       latestValidationComment: dto ? project.latestValidationComment : project.latestValidationComment,
     });
 
@@ -532,6 +600,65 @@ export class ProjectsService {
         total,
         totalPages: Math.ceil(total / pageSize) || 1,
       },
+    };
+  }
+
+  async getDirectorConstructionSitesMap(reqUser: any, projectManagerId?: string) {
+    const company = await this.ensureDirectorCompany(reqUser.mongoId);
+    const projects = await this.projectsRepo.find({
+      where: {
+        companyId: company.id,
+        status: In([ProjectStatus.APPROVED, ProjectStatus.ACTIVE]),
+      },
+      order: { updatedAt: 'DESC' },
+    });
+
+    const withLocation = projects.filter(
+      (project) => project.latitude !== null && project.longitude !== null,
+    );
+
+    const pmIds = Array.from(new Set(withLocation.map((project) => project.projectManagerId).filter(Boolean)));
+    const allUsers = await this.usersService.getAllUsers();
+    const pmDirectory = new Map<string, { name: string; email: string }>();
+
+    for (const user of allUsers) {
+      if (user?.role !== 'PROJECT_MANAGER') continue;
+      const id = user?._id?.toString?.();
+      if (!id || !pmIds.includes(id)) continue;
+
+      const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+      pmDirectory.set(id, {
+        name: fullName || user.username || user.email || 'Unknown PM',
+        email: user.email || 'N/A',
+      });
+    }
+
+    const filtered = projectManagerId
+      ? withLocation.filter((project) => project.projectManagerId === projectManagerId)
+      : withLocation;
+
+    return {
+      filters: {
+        selectedProjectManagerId: projectManagerId || null,
+        projectManagers: pmIds.map((id) => ({
+          id,
+          name: pmDirectory.get(id)?.name || 'Unknown PM',
+          email: pmDirectory.get(id)?.email || 'N/A',
+        })),
+      },
+      data: filtered.map((project) => ({
+        id: project.id,
+        name: project.name,
+        code: project.code,
+        status: project.status,
+        latitude: Number(project.latitude),
+        longitude: Number(project.longitude),
+        siteAddress: project.siteAddress || '',
+        projectManagerId: project.projectManagerId,
+        projectManagerName: pmDirectory.get(project.projectManagerId)?.name || 'Unknown PM',
+        projectManagerEmail: pmDirectory.get(project.projectManagerId)?.email || 'N/A',
+        updatedAt: project.updatedAt,
+      })),
     };
   }
 
@@ -722,6 +849,7 @@ export class ProjectsService {
       description: dto.description?.trim() || '',
       plannedDate,
       createdByPmId: reqUser.mongoId,
+      evidenceAttachments: this.normalizeEvidenceAttachments(dto.evidenceAttachments),
       status: MilestoneStatus.PLANNED,
     });
 
@@ -774,6 +902,54 @@ export class ProjectsService {
     });
   }
 
+  async canUserAccessMilestoneAttachment(filename: string, reqUser: any): Promise<boolean> {
+    if (!filename || !reqUser?.role) {
+      return false;
+    }
+
+    const attachmentPath = `/projects/uploads/${filename}`;
+    const milestone = await this.milestonesRepo
+      .createQueryBuilder('milestone')
+      .leftJoinAndSelect('milestone.project', 'project')
+      .where(
+        `EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(milestone.evidenceAttachments) AS attachment
+          WHERE attachment = :attachmentPath
+        )`,
+        { attachmentPath },
+      )
+      .orderBy('milestone.updatedAt', 'DESC')
+      .getOne();
+
+    if (!milestone?.project) {
+      return false;
+    }
+
+    if (reqUser.role === 'SUPER_ADMIN') {
+      return true;
+    }
+
+    if (reqUser.role === 'PROJECT_MANAGER') {
+      return milestone.project.projectManagerId === reqUser.mongoId;
+    }
+
+    if (reqUser.role === 'CLIENT') {
+      return milestone.project.clientUserId === reqUser.mongoId;
+    }
+
+    if (reqUser.role === 'DIRECTOR') {
+      try {
+        const company = await this.ensureDirectorCompany(reqUser.mongoId);
+        return milestone.project.companyId === company.id;
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
   async submitMilestone(
     milestoneId: string,
     reqUser: any,
@@ -807,6 +983,12 @@ export class ProjectsService {
     }
 
     milestone.evidenceSummary = dto.evidenceSummary?.trim() || milestone.evidenceSummary || '';
+    const nextAttachments = this.normalizeEvidenceAttachments(dto.evidenceAttachments);
+    if (nextAttachments.length > 0) {
+      milestone.evidenceAttachments = nextAttachments;
+    } else if (!Array.isArray(milestone.evidenceAttachments)) {
+      milestone.evidenceAttachments = [];
+    }
     milestone.submittedAt = new Date();
     milestone.status = isResubmit
       ? MilestoneStatus.RESUBMITTED_FOR_CLIENT_VALIDATION
@@ -910,6 +1092,41 @@ export class ProjectsService {
     return saved;
   }
 
+  async getMilestoneDecisionHistoryForUser(
+    milestoneId: string,
+    reqUser: any,
+    limit = 20,
+  ) {
+    const milestone = await this.milestonesRepo.findOne({ where: { id: milestoneId } });
+    if (!milestone) {
+      throw new NotFoundException('Milestone not found');
+    }
+
+    const project = await this.projectsRepo.findOne({ where: { id: milestone.projectId } });
+    if (!project) {
+      throw new NotFoundException('Project not found for milestone');
+    }
+
+    if (reqUser.role === 'PROJECT_MANAGER') {
+      if (project.projectManagerId !== reqUser.mongoId) {
+        throw new ForbiddenException('You can only view decision history for your own project milestones');
+      }
+    } else if (reqUser.role === 'DIRECTOR') {
+      const company = await this.ensureDirectorCompany(reqUser.mongoId);
+      if (project.companyId !== company.id) {
+        throw new ForbiddenException('You can only view decision history for your company project milestones');
+      }
+    } else if (reqUser.role === 'CLIENT') {
+      if (project.clientUserId !== reqUser.mongoId) {
+        throw new ForbiddenException('You can only view decision history for your assigned milestones');
+      }
+    } else if (reqUser.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Role not allowed to view milestone decision history');
+    }
+
+    return this.activityLogsService.getMilestoneDecisionHistory(milestoneId, limit);
+  }
+
   async getClientProjects(reqUser: any) {
     return this.getClientScopedProjects(reqUser);
   }
@@ -970,5 +1187,351 @@ export class ProjectsService {
     });
 
     return saved;
+  }
+
+  async getDirectorAvailableQhseManagers(reqUser: any) {
+    await this.ensureDirectorCompany(reqUser.mongoId);
+    const allUsers = await this.usersService.getAllUsers();
+
+    return allUsers
+      .filter((user: any) => user?.role === 'QHSE_MANAGER')
+      .map((user: any) => ({
+        id: user._id?.toString?.() || '',
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      }))
+      .filter((user: any) => !!user.id);
+  }
+
+  async assignQhseToProject(projectId: string, reqUser: any, dto: AssignQhseDto, reqMeta: any) {
+    const company = await this.ensureDirectorCompany(reqUser.mongoId);
+    const project = await this.projectsRepo.findOne({ where: { id: projectId } });
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.companyId !== company.id) {
+      throw new ForbiddenException('You can only assign QHSE to your company projects');
+    }
+
+    const qhseUser = await this.usersService.getUserById(dto.qhseManagerId);
+    if (!qhseUser || qhseUser.role !== 'QHSE_MANAGER') {
+      throw new BadRequestException('Selected user is not a valid QHSE_MANAGER');
+    }
+
+    project.qhseManagerId = dto.qhseManagerId;
+    const saved = await this.projectsRepo.save(project);
+
+    await this.activityLogsService.logActivity({
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email,
+      action: 'PROJECT_QHSE_ASSIGNED',
+      description: `QHSE assigned to project ${saved.name}`,
+      details: {
+        projectId: saved.id,
+        qhseManagerId: dto.qhseManagerId,
+      },
+      ipAddress: reqMeta.ipAddress,
+      userAgent: reqMeta.userAgent,
+      performedBy: reqUser.sub,
+      status: 'SUCCESS',
+    });
+
+    return saved;
+  }
+
+  async submitQhseSiteReport(projectId: string, reqUser: any, dto: SubmitQhseReportDto, reqMeta: any) {
+    const project = await this.projectsRepo.findOne({ where: { id: projectId } });
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.projectManagerId !== reqUser.mongoId) {
+      throw new ForbiddenException('You can only submit QHSE reports for your own projects');
+    }
+
+    if (!project.qhseManagerId) {
+      throw new BadRequestException('No QHSE manager assigned to this project yet');
+    }
+
+    const report = this.qhseReportsRepo.create({
+      projectId: project.id,
+      companyId: project.companyId,
+      submittedByPmId: reqUser.mongoId,
+      assignedQhseManagerId: project.qhseManagerId,
+      summary: dto.summary.trim(),
+      attachments: this.normalizeEvidenceAttachments(dto.attachments),
+      status: QhseSiteReportStatus.SUBMITTED,
+      submittedAt: new Date(),
+    });
+
+    const saved = await this.qhseReportsRepo.save(report);
+
+    await this.activityLogsService.logActivity({
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email,
+      action: 'QHSE_REPORT_SUBMITTED_BY_PM',
+      description: `PM submitted QHSE report for project ${project.name}`,
+      details: {
+        reportId: saved.id,
+        projectId: project.id,
+        assignedQhseManagerId: project.qhseManagerId,
+      },
+      ipAddress: reqMeta.ipAddress,
+      userAgent: reqMeta.userAgent,
+      performedBy: reqUser.sub,
+      status: 'SUCCESS',
+    });
+
+    return saved;
+  }
+
+  async getQhseAssignedSites(reqUser: any) {
+    return this.projectsRepo.find({
+      where: { qhseManagerId: reqUser.mongoId },
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
+  async getQhseReportQueue(reqUser: any) {
+    return this.qhseReportsRepo.find({
+      where: {
+        assignedQhseManagerId: reqUser.mongoId,
+      },
+      relations: ['project'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async reviewQhseReport(reportId: string, reqUser: any, dto: ReviewQhseReportDto, reqMeta: any) {
+    const report = await this.qhseReportsRepo.findOne({
+      where: { id: reportId },
+      relations: ['project'],
+    });
+    if (!report) {
+      throw new NotFoundException('QHSE report not found');
+    }
+
+    if (report.assignedQhseManagerId !== reqUser.mongoId) {
+      throw new ForbiddenException('You can only review reports assigned to you');
+    }
+
+    report.status = dto.decision === 'ACCEPT'
+      ? QhseSiteReportStatus.ACCEPTED
+      : QhseSiteReportStatus.ACTION_REQUIRED;
+    report.qhseComment = dto.comment?.trim() || '';
+    report.reviewedAt = new Date();
+    const saved = await this.qhseReportsRepo.save(report);
+
+    await this.activityLogsService.logActivity({
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email,
+      action:
+        dto.decision === 'ACCEPT'
+          ? 'QHSE_REPORT_ACCEPTED'
+          : 'QHSE_REPORT_CORRECTION_REQUESTED',
+      description:
+        dto.decision === 'ACCEPT'
+          ? `QHSE accepted report for project ${report.project?.name || report.projectId}`
+          : `QHSE requested correction for report in project ${report.project?.name || report.projectId}`,
+      details: {
+        reportId: saved.id,
+        projectId: saved.projectId,
+        decision: dto.decision,
+        comment: saved.qhseComment,
+      },
+      ipAddress: reqMeta.ipAddress,
+      userAgent: reqMeta.userAgent,
+      performedBy: reqUser.sub,
+      status: 'SUCCESS',
+    });
+
+    return saved;
+  }
+
+  private async getScopedQhseReport(reportId: string, reqUser: any) {
+    const report = await this.qhseReportsRepo.findOne({
+      where: { id: reportId },
+      relations: ['project'],
+    });
+
+    if (!report) {
+      throw new NotFoundException('QHSE report not found');
+    }
+
+    if (report.assignedQhseManagerId !== reqUser.mongoId) {
+      throw new ForbiddenException('You can only access reports assigned to you');
+    }
+
+    return report;
+  }
+
+  async getQhseCorrectiveActionsForReport(reportId: string, reqUser: any) {
+    await this.getScopedQhseReport(reportId, reqUser);
+
+    return this.qhseCorrectiveActionsRepo.find({
+      where: {
+        reportId,
+        assignedQhseManagerId: reqUser.mongoId,
+      },
+      order: {
+        createdAt: 'ASC',
+      },
+    });
+  }
+
+  async createQhseCorrectiveActions(
+    reportId: string,
+    reqUser: any,
+    dto: CreateQhseCorrectiveActionsDto,
+    reqMeta: any,
+  ) {
+    const report = await this.getScopedQhseReport(reportId, reqUser);
+    const existing = await this.qhseCorrectiveActionsRepo.find({ where: { reportId } });
+    const existingFindingIds = new Set(existing.map((item) => item.findingId));
+
+    const toInsert = dto.actions
+      .filter((item) => !existingFindingIds.has(item.findingId))
+      .map((item) =>
+        this.qhseCorrectiveActionsRepo.create({
+          reportId,
+          projectId: report.projectId,
+          companyId: report.companyId,
+          assignedQhseManagerId: reqUser.mongoId,
+          findingId: item.findingId,
+          title: item.title.trim(),
+          owner: item.owner?.trim() || 'Project Manager',
+          dueDate: new Date(item.dueDate),
+          priority: item.priority as QhseCorrectiveActionPriority,
+          status: QhseCorrectiveActionStatus.OPEN,
+          sourceSeverity: item.sourceSeverity as QhseFindingSeverity,
+        }),
+      );
+
+    const saved = toInsert.length > 0 ? await this.qhseCorrectiveActionsRepo.save(toInsert) : [];
+
+    if (saved.length > 0) {
+      await this.activityLogsService.logActivity({
+        userId: reqUser.sub,
+        username: reqUser.preferred_username || reqUser.username || reqUser.email,
+        action: 'QHSE_CORRECTIVE_ACTIONS_CREATED',
+        description: `QHSE created ${saved.length} corrective action(s) for report ${reportId}`,
+        details: {
+          reportId,
+          createdCount: saved.length,
+          projectId: report.projectId,
+        },
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        performedBy: reqUser.sub,
+        status: 'SUCCESS',
+      });
+    }
+
+    return this.getQhseCorrectiveActionsForReport(reportId, reqUser);
+  }
+
+  async updateQhseCorrectiveAction(
+    actionId: string,
+    reqUser: any,
+    dto: UpdateQhseCorrectiveActionDto,
+    reqMeta: any,
+  ) {
+    const action = await this.qhseCorrectiveActionsRepo.findOne({ where: { id: actionId } });
+    if (!action) {
+      throw new NotFoundException('Corrective action not found');
+    }
+
+    if (action.assignedQhseManagerId !== reqUser.mongoId) {
+      throw new ForbiddenException('You can only update corrective actions assigned to you');
+    }
+
+    if (dto.title !== undefined) action.title = dto.title.trim();
+    if (dto.owner !== undefined) action.owner = dto.owner.trim() || 'Project Manager';
+    if (dto.dueDate !== undefined) action.dueDate = new Date(dto.dueDate);
+    if (dto.priority !== undefined) {
+      action.priority = dto.priority as QhseCorrectiveActionPriority;
+    }
+    if (dto.status !== undefined) {
+      action.status = dto.status as QhseCorrectiveActionStatus;
+    }
+
+    const saved = await this.qhseCorrectiveActionsRepo.save(action);
+
+    await this.activityLogsService.logActivity({
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email,
+      action: 'QHSE_CORRECTIVE_ACTION_UPDATED',
+      description: `QHSE updated corrective action ${saved.id}`,
+      details: {
+        actionId: saved.id,
+        reportId: saved.reportId,
+        status: saved.status,
+        priority: saved.priority,
+      },
+      ipAddress: reqMeta.ipAddress,
+      userAgent: reqMeta.userAgent,
+      performedBy: reqUser.sub,
+      status: 'SUCCESS',
+    });
+
+    return saved;
+  }
+
+  async runQhseEscalationPolicy(reqUser: any, dto: RunQhseEscalationDto, reqMeta: any) {
+    const whereClause: Partial<QhseCorrectiveAction> = {
+      assignedQhseManagerId: reqUser.mongoId,
+      escalated: false,
+    };
+
+    if (dto.reportId) {
+      await this.getScopedQhseReport(dto.reportId, reqUser);
+      whereClause.reportId = dto.reportId;
+    }
+
+    const candidates = await this.qhseCorrectiveActionsRepo.find({ where: whereClause });
+    const now = new Date();
+    const toEscalate = candidates.filter((item) => {
+      const isOverdue = new Date(item.dueDate).getTime() < now.getTime();
+      const unresolved = item.status !== QhseCorrectiveActionStatus.DONE;
+      const highRisk =
+        item.priority === QhseCorrectiveActionPriority.HIGH ||
+        item.sourceSeverity === QhseFindingSeverity.HIGH;
+      return isOverdue && unresolved && highRisk;
+    });
+
+    for (const action of toEscalate) {
+      action.escalated = true;
+      action.escalatedAt = now;
+      action.escalationReason = 'High-risk corrective action is overdue and unresolved.';
+    }
+
+    if (toEscalate.length > 0) {
+      await this.qhseCorrectiveActionsRepo.save(toEscalate);
+      await this.activityLogsService.logActivity({
+        userId: reqUser.sub,
+        username: reqUser.preferred_username || reqUser.username || reqUser.email,
+        action: 'QHSE_ESCALATION_POLICY_EXECUTED',
+        description: `QHSE escalation policy escalated ${toEscalate.length} action(s)`,
+        details: {
+          reportId: dto.reportId || null,
+          escalatedCount: toEscalate.length,
+          actionIds: toEscalate.map((item) => item.id),
+        },
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        performedBy: reqUser.sub,
+        status: 'SUCCESS',
+      });
+    }
+
+    return {
+      totalCandidates: candidates.length,
+      escalatedCount: toEscalate.length,
+      reportId: dto.reportId || null,
+      escalatedActionIds: toEscalate.map((item) => item.id),
+    };
   }
 }

@@ -1,4 +1,4 @@
-import { IsDateString, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsDateString, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateMilestoneDto {
   @IsString()
@@ -12,4 +12,10 @@ export class CreateMilestoneDto {
 
   @IsDateString()
   plannedDate: string;
+
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  evidenceAttachments?: string[];
 }

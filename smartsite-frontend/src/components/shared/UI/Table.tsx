@@ -36,6 +36,9 @@ export default function Table<T>({
   onRowClick,
   getRowKey
 }: TableProps<T>) {
+  // Defensive: ensure data is always an array
+  const safeData = Array.isArray(data) ? data : []
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
@@ -44,7 +47,7 @@ export default function Table<T>({
     )
   }
 
-  if (data.length === 0) {
+  if (safeData.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
         {emptyMessage}
@@ -92,7 +95,7 @@ export default function Table<T>({
           </tr>
         </thead>
         <tbody>
-          {data.map((item) => {
+          {safeData.map((item) => {
             const rowKey = getRowKey(item)
             const visibleActions = actions.filter((action) => action.shouldShow?.(item) ?? true)
             return (

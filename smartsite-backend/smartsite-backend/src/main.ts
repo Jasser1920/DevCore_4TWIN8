@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { ApiUsageService } from './common/api-usage.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -10,7 +11,11 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   });
-
+const apiUsageService = app.get(ApiUsageService);
+app.use((req, res, next) => {
+  apiUsageService.logUsage();
+  next();
+});
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

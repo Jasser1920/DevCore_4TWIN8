@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import { getAccessToken, getSubjectFromToken, onAuthStateChanged } from '../lib/auth'
 
 export interface AccessibilitySettings {
   highContrast: boolean
@@ -9,11 +10,13 @@ export interface AccessibilitySettings {
   skipLinkVisible: boolean
   screenReaderAnnouncements: boolean
   focusTrapInModals: boolean
+  guidedTipsEnabled: boolean
 }
 
 interface AccessibilityContextType {
   settings: AccessibilitySettings
   updateSettings: (newSettings: Partial<AccessibilitySettings>) => void
+  resetSettings: () => void
 }
 
 const DEFAULT_SETTINGS: AccessibilitySettings = {
@@ -25,24 +28,52 @@ const DEFAULT_SETTINGS: AccessibilitySettings = {
   skipLinkVisible: true,
   screenReaderAnnouncements: true,
   focusTrapInModals: true,
+  guidedTipsEnabled: true,
 }
 
 const AccessibilityContext = createContext<AccessibilityContextType | undefined>(undefined)
 
 export const AccessibilityProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [settings, setSettings] = useState<AccessibilitySettings>(DEFAULT_SETTINGS)
+  const [storageKey, setStorageKey] = useState(() => getStorageKey())
+  const [isHydrated, setIsHydrated] = useState(false)
+
+  function getStorageKey() {
+    const token = getAccessToken()
+    const subject = getSubjectFromToken(token) || 'anonymous'
+    return `a11y-settings:${subject}`
+  }
+
+  useEffect(() => {
+    const syncStorageKey = () => {
+      setStorageKey(getStorageKey())
+    }
+
+    syncStorageKey()
+    const disposeAuthListener = onAuthStateChanged(syncStorageKey)
+    window.addEventListener('storage', syncStorageKey)
+
+    return () => {
+      disposeAuthListener()
+      window.removeEventListener('storage', syncStorageKey)
+    }
+  }, [])
 
   // Load settings from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('a11y-settings')
+    setIsHydrated(false)
+    const stored = localStorage.getItem(storageKey)
     if (stored) {
       try {
-        setSettings(JSON.parse(stored))
+        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) })
       } catch {
         setSettings(DEFAULT_SETTINGS)
       }
+    } else {
+      setSettings(DEFAULT_SETTINGS)
     }
-  }, [])
+    setIsHydrated(true)
+  }, [storageKey])
 
   // Apply settings to document and save to localStorage
   useEffect(() => {
@@ -76,16 +107,24 @@ export const AccessibilityProvider: React.FC<{ children: React.ReactNode }> = ({
       root.classList.remove('a11y-focus-indicators')
     }
 
+    if (!isHydrated) {
+      return
+    }
+
     // Save to localStorage
-    localStorage.setItem('a11y-settings', JSON.stringify(settings))
-  }, [settings])
+    localStorage.setItem(storageKey, JSON.stringify(settings))
+  }, [settings, storageKey, isHydrated])
 
   const updateSettings = (newSettings: Partial<AccessibilitySettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }))
   }
 
+  const resetSettings = () => {
+    setSettings(DEFAULT_SETTINGS)
+  }
+
   return (
-    <AccessibilityContext.Provider value={{ settings, updateSettings }}>
+    <AccessibilityContext.Provider value={{ settings, updateSettings, resetSettings }}>
       {children}
     </AccessibilityContext.Provider>
   )

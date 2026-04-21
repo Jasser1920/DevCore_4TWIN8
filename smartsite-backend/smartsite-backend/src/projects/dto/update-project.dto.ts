@@ -1,4 +1,13 @@
-import { IsDateString, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class UpdateProjectDto {
   @IsString()
@@ -32,4 +41,17 @@ export class UpdateProjectDto {
   @IsDateString()
   @IsOptional()
   endDate?: string;
+
+  @IsLatitude()
+  @IsOptional()
+  latitude?: number;
+
+  @IsLongitude()
+  @IsOptional()
+  longitude?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  siteAddress?: string;
 }

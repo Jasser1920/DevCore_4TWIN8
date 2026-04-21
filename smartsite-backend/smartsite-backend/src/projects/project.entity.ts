@@ -21,6 +21,7 @@ export enum ProjectStatus {
 @Entity('projects')
 @Index(['companyId'])
 @Index(['projectManagerId'])
+@Index(['qhseManagerId'])
 @Index(['status'])
 @Index(['companyId', 'code'], { unique: true })
 export class Project {
@@ -52,6 +53,9 @@ export class Project {
   @Column({ type: 'varchar', length: 255, nullable: true })
   clientUserId: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  qhseManagerId: string;
+
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   budgetPlanned: number;
 
@@ -66,6 +70,15 @@ export class Project {
 
   @Column({ type: 'date' })
   endDate: Date;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  latitude: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  longitude: number;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  siteAddress: string;
 
   @Column({ type: 'text', nullable: true })
   latestValidationComment: string;

@@ -9,12 +9,14 @@ type TokenPayload = {
 const ACCESS_TOKEN_KEY = 'smartsite_access_token'
 const REFRESH_TOKEN_KEY = 'smartsite_refresh_token'
 const TOKEN_REFRESH_BUFFER = 60 * 1000 // Refresh 1 minute before expiration
+const AUTH_STATE_EVENT = 'smartsite-auth-changed'
 
 let refreshTimeout: ReturnType<typeof setTimeout> | null = null
 
 export function setTokens(accessToken: string, refreshToken: string) {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
   localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+  window.dispatchEvent(new Event(AUTH_STATE_EVENT))
   scheduleTokenRefresh(accessToken)
 }
 
@@ -29,10 +31,16 @@ export function getRefreshToken() {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
+  window.dispatchEvent(new Event(AUTH_STATE_EVENT))
   if (refreshTimeout) {
     clearTimeout(refreshTimeout)
     refreshTimeout = null
   }
+}
+
+export function onAuthStateChanged(handler: () => void) {
+  window.addEventListener(AUTH_STATE_EVENT, handler)
+  return () => window.removeEventListener(AUTH_STATE_EVENT, handler)
 }
 
 function decodeBase64Url(input: string) {
@@ -111,6 +119,23 @@ export function getUsernameFromToken(token: string): string | null {
   try {
     const payload = JSON.parse(decoded) as TokenPayload
     return payload.preferred_username || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Get user subject (sub) from access token
+ */
+export function getSubjectFromToken(token: string): string | null {
+  if (!token) return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  const decoded = decodeBase64Url(parts[1])
+  if (!decoded) return null
+  try {
+    const payload = JSON.parse(decoded) as TokenPayload
+    return payload.sub || null
   } catch {
     return null
   }

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ActivityLog } from './activity-log.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface ActivityLogData {
   userId: string;
@@ -20,6 +21,7 @@ export interface ActivityLogData {
 export class ActivityLogsService {
   constructor(
     @InjectModel('ActivityLog') private activityLogModel: Model<ActivityLog>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -40,7 +42,12 @@ export class ActivityLogsService {
     });
 
     try {
-      return await logEntry.save();
+      const saved = await logEntry.save();
+
+      // Create role-based notifications from selected activity actions.
+      await this.notificationsService.createFromActivity(data);
+
+      return saved;
     } catch (error) {
       console.error('Failed to save activity log:', error);
       // Don't throw - logging shouldn't break the main operation
@@ -130,6 +137,21 @@ export class ActivityLogsService {
     const total = await this.activityLogModel.countDocuments({ action });
 
     return { logs, total };
+  }
+
+  async getMilestoneDecisionHistory(
+    milestoneId: string,
+    limit: number = 20,
+  ): Promise<ActivityLog[]> {
+    const safeLimit = Math.min(Math.max(limit || 20, 1), 100);
+
+    return this.activityLogModel
+      .find({
+        action: { $in: ['MILESTONE_APPROVED_BY_CLIENT', 'MILESTONE_REJECTED_BY_CLIENT'] },
+        'details.milestoneId': milestoneId,
+      })
+      .sort({ timestamp: -1 })
+      .limit(safeLimit);
   }
 
   /**

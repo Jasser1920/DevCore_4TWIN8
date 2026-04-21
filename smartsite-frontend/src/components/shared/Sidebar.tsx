@@ -245,6 +245,7 @@ export default function Sidebar({
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
+                data-tour={`sidebar-nav-${item.id}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

@@ -1,3 +1,4 @@
+ 
 import {
   BadRequestException,
   Body,
@@ -10,7 +11,12 @@ import {
   Query,
   Req,
   UseGuards,
+  StreamableFile,
+  UploadedFiles,
+  UseInterceptors,
+  NotFoundException,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt/jwt.guard';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -21,11 +27,67 @@ import { CreateMilestoneDto } from './dto/create-milestone.dto';
 import { SubmitMilestoneDto } from './dto/submit-milestone.dto';
 import { ClientValidateMilestoneDto } from './dto/client-validate-milestone.dto';
 import { AssignClientDto } from './dto/assign-client.dto';
+import { AssignQhseDto } from './dto/assign-qhse.dto';
+import { SubmitQhseReportDto } from './dto/submit-qhse-report.dto';
+import { ReviewQhseReportDto } from './dto/review-qhse-report.dto';
+import { CreateQhseCorrectiveActionsDto } from './dto/create-qhse-corrective-actions.dto';
+import { UpdateQhseCorrectiveActionDto } from './dto/update-qhse-corrective-action.dto';
+import { RunQhseEscalationDto } from './dto/run-qhse-escalation.dto';
+import { diskStorage } from 'multer';
+import type { File as MulterFile } from 'multer';
+import { basename, extname, join } from 'path';
+import { createReadStream, existsSync, mkdirSync } from 'fs';
+import { randomUUID } from 'crypto';
+import { ApiUsageService } from '../common/api-usage.service';
+
+const UPLOADS_DIR = join(process.cwd(), 'uploads', 'milestone-evidence');
+const MAX_ATTACHMENT_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+]);
+
+function ensureUploadsDir() {
+  mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+function safeUploadName(file: MulterFile) {
+  const originalName = basename(file.originalname || 'attachment');
+  const extension = extname(originalName) || '';
+  const baseName = originalName.replace(extension, '').replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/^-+|-+$/g, '') || 'attachment';
+  return `${Date.now()}-${randomUUID()}-${baseName}${extension}`;
+}
+
+function inferContentType(filename: string) {
+  const extension = extname(filename).toLowerCase();
+  switch (extension) {
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    case '.pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
+}
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(private readonly projectsService: ProjectsService,
+              private readonly apiUsageService: ApiUsageService,
+  
+  ) {}
 
   private requestMeta(req: any) {
     return {
@@ -33,7 +95,14 @@ export class ProjectsController {
       userAgent: req.headers?.['user-agent'] || undefined,
     };
   }
-
+@Get('storage-usage')
+async getStorageUsage(@Req() req: any) {
+  if (req.user.role !== 'SUPER_ADMIN') {
+    throw new ForbiddenException('Only Super Admin can view storage usage');
+  }
+  const usage = await this.projectsService.getStorageUsage();
+  return usage;
+}
   @Post()
   async createProject(@Req() req: any, @Body() body: CreateProjectDto) {
     if (req.user.role !== 'PROJECT_MANAGER') {
@@ -42,7 +111,31 @@ export class ProjectsController {
 
     return this.projectsService.createProject(req.user, body, this.requestMeta(req));
   }
-
+@Get('growth')
+async getGrowth(@Req() req: any) {
+  if (req.user.role !== 'SUPER_ADMIN') {
+    throw new ForbiddenException('Only Super Admin can view growth stats');
+  }
+  // Example: Replace with real calculation
+  const growth = await this.projectsService.getGrowth();
+  return { growth };
+}
+@Get('revenue-by-month')
+async getRevenueByMonth(@Req() req: any) {
+  if (req.user.role !== 'SUPER_ADMIN') {
+    throw new ForbiddenException('Only Super Admin can view revenue stats');
+  }
+  // Example: Replace with real calculation logic
+  return this.projectsService.getRevenueByMonth();
+}
+ @Get('api-usage')
+  async getApiUsage(@Req() req: any, @Query('minutes') minutesRaw?: string) {
+    if (req.user.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only Super Admin can view API usage');
+    }
+    const minutes = Math.min(Math.max(Number(minutesRaw) || 60, 1), 1440); // up to 24h
+    return this.apiUsageService.getUsageStats(minutes);
+  }
   @Put(':id')
   async updateProject(
     @Req() req: any,
@@ -101,6 +194,76 @@ export class ProjectsController {
     return this.projectsService.createMilestone(id, req.user, body, this.requestMeta(req));
   }
 
+  @Post('milestones/uploads')
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: diskStorage({
+        destination: (_req, _file, callback) => {
+          ensureUploadsDir();
+          callback(null, UPLOADS_DIR);
+        },
+        filename: (_req, file, callback) => {
+          callback(null, safeUploadName(file));
+        },
+      }),
+      limits: {
+        files: 10,
+        fileSize: MAX_ATTACHMENT_FILE_SIZE_BYTES,
+      },
+      fileFilter: (_req, file, callback) => {
+        if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(file.mimetype?.toLowerCase?.() || '')) {
+          return callback(new BadRequestException('Only image and PDF files are allowed'), false);
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async uploadMilestoneAttachments(@Req() req: any, @UploadedFiles() files: MulterFile[]) {
+    if (req.user.role !== 'PROJECT_MANAGER') {
+      throw new ForbiddenException('Only PROJECT_MANAGER can upload milestone evidence');
+    }
+
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one file is required');
+    }
+
+    return {
+      data: files.map((file) => `/projects/uploads/${file.filename}`),
+    };
+  }
+
+  @Get('uploads/:filename')
+  async getMilestoneAttachment(@Req() req: any, @Param('filename') filename: string) {
+    const safeFilename = basename(filename);
+    const hasAccess = await (this.projectsService as any).canUserAccessMilestoneAttachment(
+      safeFilename,
+      req.user,
+    );
+    if (!hasAccess) {
+      throw new NotFoundException('Attachment not found');
+    }
+
+    const filePath = join(UPLOADS_DIR, safeFilename);
+
+    if (!existsSync(filePath)) {
+      throw new NotFoundException('Attachment not found');
+    }
+
+    return new StreamableFile(createReadStream(filePath), {
+      type: inferContentType(filePath),
+      disposition: `inline; filename="${safeFilename}"`,
+    });
+  }
+ @UseGuards(JwtAuthGuard)
+  @Get()
+  async getProjectsCount(@Req() req: any) {
+    // Only Super Admin can view all projects count
+    if (req.user.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only Super Admin can view all projects count');
+    }
+    const count = await this.projectsService.getProjectsCount();
+    return { count };
+  }
   @Get(':id/milestones')
   async getProjectMilestones(@Req() req: any, @Param('id') id: string) {
     return this.projectsService.getProjectMilestones(id, req.user);
@@ -154,6 +317,20 @@ export class ProjectsController {
     return this.projectsService.validateMilestoneByClient(id, req.user, body, this.requestMeta(req));
   }
 
+  @Get('client/milestones/:id/decision-history')
+  async getClientMilestoneDecisionHistory(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    if (req.user.role !== 'CLIENT') {
+      throw new ForbiddenException('Only CLIENT can access milestone decision history');
+    }
+
+    const limit = Math.min(Math.max(Number(limitRaw) || 20, 1), 100);
+    return this.projectsService.getMilestoneDecisionHistoryForUser(id, req.user, limit);
+  }
+
   @Get('client/projects')
   async getClientProjects(@Req() req: any) {
     if (req.user.role !== 'CLIENT') {
@@ -197,6 +374,116 @@ export class ProjectsController {
       body,
       this.requestMeta(req),
     );
+  }
+
+  @Get('director/qhse-managers/available')
+  async getDirectorAvailableQhseManagers(@Req() req: any) {
+    if (req.user.role !== 'DIRECTOR') {
+      throw new ForbiddenException('Only DIRECTOR can access available QHSE managers');
+    }
+
+    return this.projectsService.getDirectorAvailableQhseManagers(req.user);
+  }
+
+  @Post('director/:id/assign-qhse')
+  async assignQhseToProject(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: AssignQhseDto,
+  ) {
+    if (req.user.role !== 'DIRECTOR') {
+      throw new ForbiddenException('Only DIRECTOR can assign QHSE managers');
+    }
+
+    return this.projectsService.assignQhseToProject(id, req.user, body, this.requestMeta(req));
+  }
+
+  @Post('pm/:id/qhse-reports')
+  async submitQhseSiteReport(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: SubmitQhseReportDto,
+  ) {
+    if (req.user.role !== 'PROJECT_MANAGER') {
+      throw new ForbiddenException('Only PROJECT_MANAGER can submit QHSE reports');
+    }
+
+    return this.projectsService.submitQhseSiteReport(id, req.user, body, this.requestMeta(req));
+  }
+
+  @Get('qhse/assigned-sites')
+  async getQhseAssignedSites(@Req() req: any) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can access assigned sites');
+    }
+
+    return this.projectsService.getQhseAssignedSites(req.user);
+  }
+
+  @Get('qhse/reports/queue')
+  async getQhseReportQueue(@Req() req: any) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can access QHSE report queue');
+    }
+
+    return this.projectsService.getQhseReportQueue(req.user);
+  }
+
+  @Post('qhse/reports/:id/review')
+  async reviewQhseReport(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: ReviewQhseReportDto,
+  ) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can review QHSE reports');
+    }
+
+    return this.projectsService.reviewQhseReport(id, req.user, body, this.requestMeta(req));
+  }
+
+  @Get('qhse/reports/:id/actions')
+  async getQhseCorrectiveActionsForReport(@Req() req: any, @Param('id') id: string) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can access corrective actions');
+    }
+
+    return this.projectsService.getQhseCorrectiveActionsForReport(id, req.user);
+  }
+
+  @Post('qhse/reports/:id/actions')
+  async createQhseCorrectiveActions(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: CreateQhseCorrectiveActionsDto,
+  ) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can create corrective actions');
+    }
+
+    return this.projectsService.createQhseCorrectiveActions(id, req.user, body, this.requestMeta(req));
+  }
+
+  @Put('qhse/actions/:id')
+  async updateQhseCorrectiveAction(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: UpdateQhseCorrectiveActionDto,
+  ) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can update corrective actions');
+    }
+
+    return this.projectsService.updateQhseCorrectiveAction(id, req.user, body, this.requestMeta(req));
+  }
+
+  @Post('qhse/actions/escalations/run')
+  async runQhseEscalationPolicy(@Req() req: any, @Body() body: RunQhseEscalationDto) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can run escalation policy');
+    }
+
+    return this.projectsService.runQhseEscalationPolicy(req.user, body, this.requestMeta(req));
   }
 
   @Get('director/active-overview')
@@ -256,6 +543,18 @@ export class ProjectsController {
       sortBy,
       sortOrder,
     });
+  }
+
+  @Get('director/construction-sites-map')
+  async getDirectorConstructionSitesMap(
+    @Req() req: any,
+    @Query('projectManagerId') projectManagerId?: string,
+  ) {
+    if (req.user.role !== 'DIRECTOR') {
+      throw new ForbiddenException('Only DIRECTOR can access construction sites map');
+    }
+
+    return this.projectsService.getDirectorConstructionSitesMap(req.user, projectManagerId);
   }
 
   @Get('director/:id/financial-kpis')

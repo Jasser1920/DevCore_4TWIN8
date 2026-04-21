@@ -1,7 +1,16 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch, createStrategicVision, getStrategicVision, getAvailableProjectManagers, assignProjectManager } from '../lib/api'
+import {
+  apiFetch,
+  assignProjectManager,
+  assignQhseToProject,
+  createStrategicVision,
+  getAvailableProjectManagers,
+  getDirectorActiveProjectsOverview,
+  getDirectorAvailableQhseManagers,
+  getStrategicVision,
+} from '../lib/api'
 import { clearTokens, getAccessToken, getRefreshToken, getRolesFromToken, getBusinessRoles } from '../lib/auth'
 import { useResponsive } from '../hooks/useResponsive'
 import { ActivityLogs } from '../components/ActivityLogs'
@@ -66,6 +75,9 @@ export default function Director() {
   const [budgetError, setBudgetError] = useState('')
   const [showPmAssignment, setShowPmAssignment] = useState(false)
   const [selectedPmId, setSelectedPmId] = useState('')
+  const [showQhseAssignment, setShowQhseAssignment] = useState(false)
+  const [selectedQhseId, setSelectedQhseId] = useState('')
+  const [selectedProjectForQhse, setSelectedProjectForQhse] = useState('')
 
   const { data: companyData, isLoading: companyLoading, error: companyError } = useQuery({
     queryKey: ['director-company'],
@@ -139,6 +151,22 @@ export default function Director() {
 
   const projectManagers = projectManagersData?.data || []
 
+  const { data: qhseManagersData } = useQuery({
+    queryKey: ['available-qhse-managers'],
+    queryFn: async () => {
+      return getDirectorAvailableQhseManagers()
+    },
+  })
+
+  const qhseManagers = qhseManagersData || []
+
+  const { data: directorProjectsOverview } = useQuery({
+    queryKey: ['director-projects-for-qhse-assignment'],
+    queryFn: async () => getDirectorActiveProjectsOverview({ page: 1, pageSize: 100, sortBy: 'lastUpdatedAt', sortOrder: 'desc' }),
+  })
+
+  const directorProjects = directorProjectsOverview?.data || []
+
   // Assign PM Mutation
   const assignPmMutation = useMutation({
     mutationFn: async () => {
@@ -150,6 +178,18 @@ export default function Director() {
       setSelectedPmId('')
       // Refetch company to get updated projectManagerId
       window.location.reload()
+    },
+  })
+
+  const assignQhseMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedProjectForQhse || !selectedQhseId) throw new Error('Select a project and QHSE manager')
+      return assignQhseToProject(selectedProjectForQhse, selectedQhseId)
+    },
+    onSuccess: () => {
+      setShowQhseAssignment(false)
+      setSelectedQhseId('')
+      setSelectedProjectForQhse('')
     },
   })
 
@@ -1046,6 +1086,141 @@ export default function Director() {
                   {!showPmAssignment && !company.projectManagerId && (
                     <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '13px', padding: '16px' }}>
                       No Project Manager assigned yet. Click "Assign PM" to assign one.
+                    </div>
+                  )}
+                </div>
+
+                <div style={{
+                  backgroundColor: 'white',
+                  borderRadius: '12px',
+                  padding: '32px',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1a1a1a', margin: 0 }}>QHSE Site Assignment</h3>
+                    {!showQhseAssignment && (
+                      <button
+                        onClick={() => setShowQhseAssignment(true)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#075B7A',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        Assign QHSE
+                      </button>
+                    )}
+                  </div>
+
+                  {showQhseAssignment && (
+                    <div style={{ backgroundColor: '#f9fafb', padding: '24px', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1a1a1a', margin: '0 0 16px 0' }}>
+                        Assign QHSE Manager to Project Site
+                      </h4>
+
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#6b7280', marginBottom: '6px' }}>
+                          Project Site
+                        </label>
+                        <select
+                          value={selectedProjectForQhse}
+                          onChange={(e) => setSelectedProjectForQhse(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            fontSize: '14px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            boxSizing: 'border-box',
+                            backgroundColor: 'white',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="">Select a project site...</option>
+                          {directorProjects.map((project: any) => (
+                            <option key={project.id} value={project.id}>
+                              {project.name} ({project.code})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#6b7280', marginBottom: '6px' }}>
+                          QHSE Manager
+                        </label>
+                        <select
+                          value={selectedQhseId}
+                          onChange={(e) => setSelectedQhseId(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            fontSize: '14px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            boxSizing: 'border-box',
+                            backgroundColor: 'white',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="">Select a QHSE manager...</option>
+                          {qhseManagers.map((qhse: any) => (
+                            <option key={qhse.id} value={qhse.id}>
+                              {qhse.firstName} {qhse.lastName} ({qhse.email})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                          onClick={() => assignQhseMutation.mutate()}
+                          disabled={!selectedProjectForQhse || !selectedQhseId || assignQhseMutation.isPending}
+                          style={{
+                            padding: '10px 16px',
+                            backgroundColor: '#059669',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: selectedProjectForQhse && selectedQhseId && !assignQhseMutation.isPending ? 'pointer' : 'not-allowed',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            opacity: selectedProjectForQhse && selectedQhseId && !assignQhseMutation.isPending ? 1 : 0.6
+                          }}
+                        >
+                          {assignQhseMutation.isPending ? 'Assigning...' : 'Assign QHSE'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowQhseAssignment(false)
+                            setSelectedQhseId('')
+                            setSelectedProjectForQhse('')
+                          }}
+                          style={{
+                            padding: '10px 16px',
+                            backgroundColor: '#e5e7eb',
+                            color: '#374151',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!showQhseAssignment && (
+                    <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '13px', padding: '16px' }}>
+                      Assign QHSE managers to specific project sites so they can review PM safety reports.
                     </div>
                   )}
                 </div>

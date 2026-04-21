@@ -1,124 +1,263 @@
-import DetailedMetricCard from '../../components/shared/UI/DetailedMetricCard'
-import { useResponsive } from '../../hooks/useResponsive'
 
+import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { apiFetch } from '../../lib/api'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+
+function formatPercent(value: number) {
+  const amount = Number.isFinite(Number(value)) ? Number(value) : 0
+  return `${amount.toFixed(2)}%`
+}
+function formatDate(date: string) {
+  return new Date(date).toLocaleDateString()
+}
+
+// Fetch construction sites for the MiniMap
+const useDirectorSites = () => {
+  return useQuery({
+    queryKey: ['director-construction-sites-map'],
+    queryFn: () => apiFetch<any[]>('/projects/director/construction-sites-map'),
+    refetchInterval: 10000,
+  });
+};
 export default function Dashboard() {
-  const { isMobile, isTablet } = useResponsive()
+  // Fetch construction sites for the MiniMap
+
+  // Defensive: always use an array for sites
+  const {
+    data: sitesRaw,
+    isLoading: showSitesLoading,
+    isError: sitesError,
+    error: sitesErrorObj,
+  } = useDirectorSites() as { data: any; isLoading: boolean; isError: boolean; error: any };
+  // Handle possible API response shapes
+  const sites: any[] = Array.isArray(sitesRaw)
+    ? sitesRaw
+    : (sitesRaw && Array.isArray(sitesRaw.data))
+      ? sitesRaw.data
+      : [];
+
+  const MiniMap = () => {
+    const defaultCenter: [number, number] = [36.8065, 10.1815];
+    const mapCenter: [number, number] = sites.length
+      ? [
+          Number((sites.reduce((sum: number, s: any) => sum + (s.latitude || 0), 0) / sites.length).toFixed(7)),
+          Number((sites.reduce((sum: number, s: any) => sum + (s.longitude || 0), 0) / sites.length).toFixed(7)),
+        ]
+      : defaultCenter;
+    const statusColor: Record<string, string> = {
+      APPROVED: '#0ea5e9',
+      ACTIVE: '#16a34a',
+      REJECTED: '#dc2626',
+      DRAFT: '#6b7280',
+      SUBMITTED_FOR_VALIDATION: '#d97706',
+    };
+    return (
+      <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', marginTop: 24, padding: 24, width: '100%', maxWidth: '100%' }}>
+        <div style={{ fontWeight: 600, fontSize: 18, marginBottom: 16 }}>Active Construction Sites Map</div>
+        {showSitesLoading && <div>Loading map...</div>}
+        {sitesError && (
+          <div style={{ color: '#b91c1c', fontSize: 14 }}>
+            Error fetching sites: {sitesErrorObj instanceof Error ? sitesErrorObj.message : 'Unknown error'}
+          </div>
+        )}
+        {!showSitesLoading && !sitesError && (
+          <MapContainer
+            center={mapCenter}
+            zoom={sites.length ? 8 : 6}
+            style={{ height: 340, width: '100%', borderRadius: 12, overflow: 'hidden' }}
+            scrollWheelZoom={false}
+          >
+            <TileLayer
+              attribution='&copy; OpenStreetMap contributors'
+              url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+            />
+            {sites.map((site: any, idx: number) => (
+              <CircleMarker
+                key={site.id || idx}
+                center={[site.latitude, site.longitude]}
+                radius={8}
+                pathOptions={{
+                  color: statusColor[site.status as keyof typeof statusColor] || '#0f172a',
+                  fillColor: statusColor[site.status as keyof typeof statusColor] || '#0f172a',
+                  fillOpacity: 0.85,
+                }}
+              >
+                <Popup>
+                  <div style={{ minWidth: 180 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{site.name}</div>
+                    <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>{site.code}</div>
+                    <div style={{ fontSize: 12, marginTop: 8 }}>Status: {site.status}</div>
+                    {site.siteAddress && <div style={{ fontSize: 12, marginTop: 6 }}>Address: {site.siteAddress}</div>}
+                    <div style={{ fontSize: 12, marginTop: 6, color: '#334155' }}>{site.latitude?.toFixed(6)}, {site.longitude?.toFixed(6)}</div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
+          </MapContainer>
+        )}
+      </div>
+    );
+  };
+
+  // Fetch active projects overview
+  const { data: overviewData, isLoading: overviewLoading } = useQuery({
+    queryKey: ['director-active-overview'],
+    queryFn: () => apiFetch<any>('/projects/director/active-overview?page=1&pageSize=100'),
+    refetchInterval: 5000,
+  })
+
+  // Fetch all milestones for upcoming milestones section
+  const { data: allMilestonesData, isLoading: milestonesLoading } = useQuery({
+    queryKey: ['director-all-milestones'],
+    queryFn: () => apiFetch<any>('/projects/director/all-milestones?page=1&pageSize=200'),
+    refetchInterval: 10000,
+  })
+
+  // Top Projects by Budget Consumption
+  const topBudgetProjects = useMemo(() => {
+    if (!overviewData?.data) return [];
+    return [...overviewData.data]
+      .sort((a, b) => (b.budgetConsumptionPercent ?? 0) - (a.budgetConsumptionPercent ?? 0))
+      .slice(0, 5);
+  }, [overviewData]);
+
+  // Upcoming Milestones
+  const upcomingMilestones = useMemo(() => {
+    if (!allMilestonesData?.data) return [];
+    return [...allMilestonesData.data]
+      .filter((m) => m.plannedDate && new Date(m.plannedDate) > new Date())
+      .sort((a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime())
+      .slice(0, 5);
+  }, [allMilestonesData]);
+
+  // Fetch validation queue
+  const { data: validationData, isLoading: validationLoading } = useQuery({
+    queryKey: ['director-validation-queue'],
+    queryFn: () => apiFetch<any[]>('/projects/director/validation-queue'),
+    refetchInterval: 5000,
+  })
+
+  // Calculate stats
+  const statusStats = useMemo(() => {
+    if (!overviewData?.data) return []
+    const counts: Record<string, number> = {}
+    for (const p of overviewData.data) {
+      counts[p.status] = (counts[p.status] || 0) + 1
+    }
+    return Object.entries(counts).map(([status, value]) => ({ name: status, value }))
+  }, [overviewData])
+
+  const riskStats = useMemo(() => {
+    if (!overviewData?.data) return []
+    const counts: Record<string, number> = {}
+    for (const p of overviewData.data) {
+      counts[p.risk] = (counts[p.risk] || 0) + 1
+    }
+    return Object.entries(counts).map(([risk, value]) => ({ name: risk, value }))
+  }, [overviewData])
+
+  const COLORS = ['#148ABB', '#22c55e', '#f59e42', '#ef4444', '#6366f1', '#eab308']
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Operations Metrics Grid */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-        gap: '24px'
-      }}>
-        <DetailedMetricCard
-          icon="📊"
-          iconBgColor="#CAEDF1"
-          title="Projects Overview"
-          stats={[
-            { label: 'Active Projects:', value: 5 },
-            { label: 'Completed:', value: 12 },
-            { label: 'In Progress:', value: 5 },
-            { label: 'Team Members:', value: 24 }
-          ]}
-        />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
+        {/* Project Status Pie */}
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', minWidth: 320, flex: 1, padding: 24 }}>
+          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>Projects by Status</div>
+          {overviewLoading ? 'Loading...' : (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={statusStats} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label>
+                  {statusStats.map((entry, idx) => <Cell key={entry.name} fill={COLORS[idx % COLORS.length]} />)}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
 
-        <DetailedMetricCard
-          icon="🛡️"
-          iconBgColor="#dcfce7"
-          title="Safety & QHSE"
-          stats={[
-            { label: 'Days Without Incident:', value: 127, valueStyle: 'success' },
-            { label: 'Inspections (Month):', value: '18/20' },
-            { label: 'Open Safety Issues:', value: 3, valueStyle: 'warning' },
-            { label: 'Compliance Rate:', value: '96.5%' }
-          ]}
-        />
+        {/* Project Risk Pie */}
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', minWidth: 320, flex: 1, padding: 24 }}>
+          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>Projects by Risk</div>
+          {overviewLoading ? 'Loading...' : (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={riskStats} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label>
+                  {riskStats.map((entry, idx) => <Cell key={entry.name} fill={COLORS[idx % COLORS.length]} />)}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
 
-        <DetailedMetricCard
-          icon="💰"
-          iconBgColor="#fef3c7"
-          title="Financial Overview"
-          stats={[
-            { label: 'Total Budget:', value: '$2.45M' },
-            { label: 'Current Spend:', value: '$1.82M' },
-            { label: 'Budget Variance:', value: '-$12.3K', valueStyle: 'success' },
-            { label: 'Change Orders:', value: '$48.2K' }
-          ]}
-        />
+        {/* Validation Queue Stat */}
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', minWidth: 220, flex: 1, padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>Pending Validations</div>
+          <div style={{ fontSize: 48, fontWeight: 700, color: '#ef4444' }}>
+            {validationLoading ? '...' : (validationData?.length ?? 0)}
+          </div>
+        </div>
+        <MiniMap />
+      </div>
 
-        <DetailedMetricCard
-          icon="📅"
-          iconBgColor="#e0e7ff"
-          title="Schedule Performance"
-          stats={[
-            { label: 'Projects On Schedule:', value: '4/5 (80%)' },
-            { label: 'Behind Schedule:', value: 1, valueStyle: 'danger' },
-            { label: 'Upcoming Milestones:', value: 6 },
-            { label: 'SPI:', value: '0.97' }
-          ]}
-        />
+      {/* --- Analytics Sections --- */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginTop: 24 }}>
+        {/* Top Projects by Budget Consumption */}
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', minWidth: 320, flex: 1, padding: 24 }}>
+          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>Top Projects by Budget Consumption</div>
+          {overviewLoading ? 'Loading...' : (
+            <table style={{ width: '100%', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: '#334155', background: '#f8fafc' }}>
+                  <th style={{ textAlign: 'left', padding: 8 }}>Project</th>
+                  <th style={{ textAlign: 'left', padding: 8 }}>Code</th>
+                  <th style={{ textAlign: 'right', padding: 8 }}>Budget %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topBudgetProjects.map((p) => (
+                  <tr key={p.id}>
+                    <td style={{ padding: 8 }}>{p.name}</td>
+                    <td style={{ padding: 8 }}>{p.code}</td>
+                    <td style={{ padding: 8, textAlign: 'right' }}>{formatPercent(p.budgetConsumptionPercent)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
 
-        <DetailedMetricCard
-          icon="👷"
-          iconBgColor="#fed7aa"
-          title="Resource Utilization"
-          stats={[
-            { label: 'Equipment Utilization:', value: '87%' },
-            { label: 'Labor Hours (Week):', value: '1,248 hrs' },
-            { label: 'Available Crew:', value: '24/28' },
-            { label: 'Subcontractors Active:', value: 3 }
-          ]}
-        />
-
-        <DetailedMetricCard
-          icon="🤝"
-          iconBgColor="#fce7f3"
-          title="Client Relations"
-          stats={[
-            { label: 'Change Requests:', value: 2 },
-            { label: 'Satisfaction Score:', value: '4.6/5.0', valueStyle: 'success' },
-            { label: 'Pending Approvals:', value: 4 },
-            { label: 'Outstanding RFIs:', value: 7 }
-          ]}
-        />
-
-        <DetailedMetricCard
-          icon="📋"
-          iconBgColor="#ddd6fe"
-          title="Documents & Compliance"
-          stats={[
-            { label: 'Pending Review:', value: 8 },
-            { label: 'Active Permits:', value: '12/12', valueStyle: 'success' },
-            { label: 'Contract Milestones:', value: 3 },
-            { label: 'Daily Reports:', value: '100%' }
-          ]}
-        />
-
-        <DetailedMetricCard
-          icon="✅"
-          iconBgColor="#ccfbf1"
-          title="Quality Metrics"
-          stats={[
-            { label: 'Inspections Passed:', value: '94%' },
-            { label: 'Deficiencies Open:', value: 11 },
-            { label: 'Rework Hours (Month):', value: '28 hrs' },
-            { label: 'Punch List Items:', value: 5 }
-          ]}
-        />
-
-        <DetailedMetricCard
-          icon="⚠️"
-          iconBgColor="#fee2e2"
-          title="Risk Management"
-          stats={[
-            { label: 'Active Risks:', value: '4 (1H, 2M, 1L)' },
-            { label: 'Risks Mitigated:', value: 3 },
-            { label: 'Weather Delays:', value: '2 days' },
-            { label: 'Insurance Claims:', value: 0, valueStyle: 'success' }
-          ]}
-        />
+        {/* Upcoming Milestones */}
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', minWidth: 320, flex: 1, padding: 24 }}>
+          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>Upcoming Milestones</div>
+          {milestonesLoading ? 'Loading...' : (
+            <table style={{ width: '100%', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: '#334155', background: '#f8fafc' }}>
+                  <th style={{ textAlign: 'left', padding: 8 }}>Project</th>
+                  <th style={{ textAlign: 'left', padding: 8 }}>Milestone</th>
+                  <th style={{ textAlign: 'left', padding: 8 }}>Planned Date</th>
+                  <th style={{ textAlign: 'left', padding: 8 }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {upcomingMilestones.map((m) => (
+                  <tr key={m.id}>
+                    <td style={{ padding: 8 }}>{m.projectName || '-'}</td>
+                    <td style={{ padding: 8 }}>{m.name}</td>
+                    <td style={{ padding: 8 }}>{formatDate(m.plannedDate)}</td>
+                    <td style={{ padding: 8 }}>{m.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   )

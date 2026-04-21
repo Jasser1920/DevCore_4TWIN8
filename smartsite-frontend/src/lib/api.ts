@@ -2,6 +2,11 @@ import { getAccessToken, refreshAccessToken, isTokenExpiringSoon, getRefreshToke
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
+export function resolveApiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) return path
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}) {
   let token = getAccessToken()
 
@@ -16,7 +21,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {})
   headers.set('Accept', 'application/json')
 
-  if (!headers.has('Content-Type') && options.body) {
+  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
 
@@ -153,11 +158,15 @@ export type ProjectItem = {
   projectManagerId: string
   directorId?: string
   clientUserId?: string | null
+  qhseManagerId?: string | null
   budgetPlanned: number
   budgetConsumed: number
   currency: string
   startDate: string
   endDate: string
+  latitude?: number | null
+  longitude?: number | null
+  siteAddress?: string | null
   latestValidationComment?: string
   submittedAt?: string
   validatedAt?: string
@@ -174,6 +183,7 @@ export type MilestoneItem = {
   description?: string
   plannedDate: string
   evidenceSummary?: string
+  evidenceAttachments?: string[]
   submittedAt?: string
   validatedAt?: string
   clientValidationComment?: string
@@ -193,6 +203,9 @@ export async function createProject(data: {
   currency?: string
   startDate: string
   endDate: string
+  latitude: number
+  longitude: number
+  siteAddress?: string
 }) {
   return apiFetch<ProjectItem>('/projects', {
     method: 'POST',
@@ -208,6 +221,9 @@ export async function updateProject(projectId: string, data: {
   currency?: string
   startDate?: string
   endDate?: string
+  latitude?: number
+  longitude?: number
+  siteAddress?: string
 }) {
   return apiFetch<ProjectItem>('/projects/' + projectId, {
     method: 'PUT',
@@ -252,6 +268,7 @@ export type DirectorProjectOverviewItem = {
   clientUserId?: string | null
   clientName?: string | null
   clientEmail?: string | null
+  qhseManagerId?: string | null
   budgetConsumptionPercent: number
   progressPercent: number
   risk: DirectorProjectRisk
@@ -344,6 +361,36 @@ export async function startProject(projectId: string) {
   })
 }
 
+export type DirectorConstructionSiteItem = {
+  id: string
+  name: string
+  code: string
+  status: ProjectStatus
+  latitude: number
+  longitude: number
+  siteAddress: string
+  projectManagerId: string
+  projectManagerName: string
+  projectManagerEmail: string
+  updatedAt: string
+}
+
+export async function getDirectorConstructionSitesMap(projectManagerId?: string) {
+  const query = new URLSearchParams()
+  if (projectManagerId) query.set('projectManagerId', projectManagerId)
+
+  const queryString = query.toString()
+  return apiFetch<{
+    filters: {
+      selectedProjectManagerId: string | null
+      projectManagers: Array<{ id: string; name: string; email: string }>
+    }
+    data: DirectorConstructionSiteItem[]
+  }>('/projects/director/construction-sites-map' + (queryString ? `?${queryString}` : ''), {
+    method: 'GET',
+  })
+}
+
 export async function getProjectFeedback(projectId: string) {
   return apiFetch<{
     project: ProjectItem
@@ -365,11 +412,24 @@ export async function createMilestone(projectId: string, data: {
   name: string
   description?: string
   plannedDate: string
+  evidenceAttachments?: string[]
 }) {
   return apiFetch<MilestoneItem>('/projects/' + projectId + '/milestones', {
     method: 'POST',
     body: JSON.stringify(data),
   })
+}
+
+export async function uploadMilestoneAttachments(files: File[]) {
+  if (!files.length) return [] as string[]
+
+  const formData = new FormData()
+  files.forEach((file) => formData.append('files', file))
+
+  return apiFetch<{ data: string[] }>('/projects/milestones/uploads', {
+    method: 'POST',
+    body: formData,
+  }).then((response) => response.data)
 }
 
 export async function getProjectMilestones(projectId: string) {
@@ -378,14 +438,14 @@ export async function getProjectMilestones(projectId: string) {
   })
 }
 
-export async function submitMilestone(milestoneId: string, data?: { evidenceSummary?: string }) {
+export async function submitMilestone(milestoneId: string, data?: { evidenceSummary?: string; evidenceAttachments?: string[] }) {
   return apiFetch<MilestoneItem>('/projects/milestones/' + milestoneId + '/submit', {
     method: 'POST',
     body: JSON.stringify(data || {}),
   })
 }
 
-export async function resubmitMilestone(milestoneId: string, data?: { evidenceSummary?: string }) {
+export async function resubmitMilestone(milestoneId: string, data?: { evidenceSummary?: string; evidenceAttachments?: string[] }) {
   return apiFetch<MilestoneItem>('/projects/milestones/' + milestoneId + '/resubmit', {
     method: 'POST',
     body: JSON.stringify(data || {}),
@@ -412,4 +472,227 @@ export async function validateMilestoneByClient(
     method: 'POST',
     body: JSON.stringify(data),
   })
+}
+
+export type QhseReportStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'ACTION_REQUIRED' | 'ACCEPTED'
+export type QhseCorrectiveActionPriority = 'LOW' | 'MEDIUM' | 'HIGH'
+export type QhseCorrectiveActionStatus = 'OPEN' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE'
+
+export type DirectorQhseManagerItem = {
+  id: string
+  username: string
+  email: string
+  firstName?: string
+  lastName?: string
+}
+
+export type QhseSiteReportItem = {
+  id: string
+  projectId: string
+  companyId: string
+  submittedByPmId: string
+  assignedQhseManagerId: string
+  summary: string
+  attachments: string[]
+  status: QhseReportStatus
+  qhseComment?: string
+  submittedAt?: string
+  reviewedAt?: string
+  createdAt: string
+  updatedAt: string
+  project?: ProjectItem
+}
+
+export type QhseCorrectiveActionItem = {
+  id: string
+  reportId: string
+  projectId: string
+  companyId: string
+  assignedQhseManagerId: string
+  findingId: string
+  title: string
+  owner: string
+  dueDate: string
+  priority: QhseCorrectiveActionPriority
+  status: QhseCorrectiveActionStatus
+  sourceSeverity: 'LOW' | 'MEDIUM' | 'HIGH'
+  escalated: boolean
+  escalationReason?: string
+  escalatedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export async function getDirectorAvailableQhseManagers() {
+  return apiFetch<DirectorQhseManagerItem[]>('/projects/director/qhse-managers/available', {
+    method: 'GET',
+  })
+}
+
+export async function assignQhseToProject(projectId: string, qhseManagerId: string) {
+  return apiFetch<ProjectItem>('/projects/director/' + projectId + '/assign-qhse', {
+    method: 'POST',
+    body: JSON.stringify({ qhseManagerId }),
+  })
+}
+
+export async function submitQhseSiteReport(projectId: string, data: { summary: string; attachments?: string[] }) {
+  return apiFetch<QhseSiteReportItem>('/projects/pm/' + projectId + '/qhse-reports', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function getQhseAssignedSites() {
+  return apiFetch<ProjectItem[]>('/projects/qhse/assigned-sites', {
+    method: 'GET',
+  })
+}
+
+export async function getQhseReportQueue() {
+  return apiFetch<QhseSiteReportItem[]>('/projects/qhse/reports/queue', {
+    method: 'GET',
+  })
+}
+
+export async function reviewQhseReport(
+  reportId: string,
+  data: { decision: 'ACCEPT' | 'REQUEST_CORRECTION'; comment?: string },
+) {
+  return apiFetch<QhseSiteReportItem>('/projects/qhse/reports/' + reportId + '/review', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function getQhseCorrectiveActions(reportId: string) {
+  return apiFetch<QhseCorrectiveActionItem[]>('/projects/qhse/reports/' + reportId + '/actions', {
+    method: 'GET',
+  })
+}
+
+export async function createQhseCorrectiveActions(
+  reportId: string,
+  data: {
+    actions: Array<{
+      findingId: string
+      title: string
+      owner?: string
+      dueDate: string
+      priority: QhseCorrectiveActionPriority
+      sourceSeverity: 'LOW' | 'MEDIUM' | 'HIGH'
+    }>
+  },
+) {
+  return apiFetch<QhseCorrectiveActionItem[]>('/projects/qhse/reports/' + reportId + '/actions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function updateQhseCorrectiveAction(
+  actionId: string,
+  data: {
+    title?: string
+    owner?: string
+    dueDate?: string
+    priority?: QhseCorrectiveActionPriority
+    status?: QhseCorrectiveActionStatus
+  },
+) {
+  return apiFetch<QhseCorrectiveActionItem>('/projects/qhse/actions/' + actionId, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function runQhseEscalationPolicy(reportId?: string) {
+  return apiFetch<{
+    totalCandidates: number
+    escalatedCount: number
+    reportId: string | null
+    escalatedActionIds: string[]
+  }>('/projects/qhse/actions/escalations/run', {
+    method: 'POST',
+    body: JSON.stringify({ reportId }),
+  })
+}
+
+export type NotificationRole = 'SUPER_ADMIN' | 'DIRECTOR' | 'PROJECT_MANAGER' | 'CLIENT'
+
+export type MilestoneDecisionHistoryItem = {
+  _id: string
+  action: 'MILESTONE_APPROVED_BY_CLIENT' | 'MILESTONE_REJECTED_BY_CLIENT'
+  description?: string
+  details?: {
+    decision?: 'APPROVE' | 'REJECT'
+    comment?: string
+    milestoneId?: string
+  }
+  timestamp: string
+  username?: string
+}
+
+export type NotificationItem = {
+  id: string
+  recipientRole: NotificationRole
+  title: string
+  message: string
+  action: string
+  metadata?: Record<string, any>
+  isRead: boolean
+  readAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export async function getMyNotifications(params?: {
+  page?: number
+  limit?: number
+  unreadOnly?: boolean
+}) {
+  const query = new URLSearchParams()
+  if (params?.page) query.set('page', String(params.page))
+  if (params?.limit) query.set('limit', String(params.limit))
+  if (typeof params?.unreadOnly === 'boolean') query.set('unreadOnly', String(params.unreadOnly))
+
+  const queryString = query.toString()
+  return apiFetch<{
+    items: NotificationItem[]
+    pagination: {
+      page: number
+      limit: number
+      total: number
+      pages: number
+    }
+  }>('/notifications/me' + (queryString ? `?${queryString}` : ''), {
+    method: 'GET',
+  })
+}
+
+export async function getMyUnreadNotificationCount() {
+  return apiFetch<{ unread: number }>('/notifications/unread-count', {
+    method: 'GET',
+  })
+}
+
+export async function markNotificationAsRead(notificationId: string) {
+  return apiFetch<{ message: string; item: NotificationItem }>('/notifications/' + notificationId + '/read', {
+    method: 'PATCH',
+  })
+}
+
+export async function markAllNotificationsAsRead() {
+  return apiFetch<{ message: string }>('/notifications/read-all', {
+    method: 'POST',
+  })
+}
+
+export async function getClientMilestoneDecisionHistory(milestoneId: string, limit = 20) {
+  return apiFetch<MilestoneDecisionHistoryItem[]>(
+    '/projects/client/milestones/' + milestoneId + '/decision-history?limit=' + String(limit),
+    {
+      method: 'GET',
+    },
+  )
 }

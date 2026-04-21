@@ -9,15 +9,19 @@ import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { UsersModule } from '../users/users.module';
 import { StrategicVision } from '../strategic-vision/strategic-vision.entity';
 import { Milestone } from './milestone.entity';
+import { QhseSiteReport } from './qhse-site-report.entity';
+import { QhseCorrectiveAction } from './qhse-corrective-action.entity';
+import { ApiUsageService } from '../common/api-usage.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Project, ProjectValidationHistory, Company, StrategicVision, Milestone]),
+    TypeOrmModule.forFeature([QhseSiteReport, QhseCorrectiveAction]),
     ActivityLogsModule,
     UsersModule,
   ],
   controllers: [ProjectsController],
-  providers: [ProjectsService],
+  providers: [ProjectsService, ApiUsageService],
   exports: [ProjectsService],
 })
 export class ProjectsModule {}

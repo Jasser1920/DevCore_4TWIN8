@@ -42,16 +42,34 @@ interface CreateUserResponse {
 export function useUsers() {
   const queryClient = useQueryClient()
 
-  // Fetch users list
   const usersQuery = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      const data = await apiFetch<{ users: User[] }>('/users/list', { method: 'GET' })
-      return data.users
+      try {
+        const data = await apiFetch<any>('/users/list', { method: 'GET' })
+        console.log('Users API response:', data)
+        
+        if (Array.isArray(data)) {
+          console.log('Response is array, returning directly')
+          return data
+        }
+        if (data?.users && Array.isArray(data.users)) {
+          console.log('Response has .users property, returning that')
+          return data.users
+        }
+        if (data?.data && Array.isArray(data.data)) {
+          console.log('Response has .data property, returning that')
+          return data.data
+        }
+        console.warn('Could not extract array from response, returning empty array')
+        return []
+      } catch (error) {
+        console.error('Error fetching users:', error)
+        return []
+      }
     },
   })
 
-  // Create user
   const createUserMutation = useMutation({
     mutationFn: async (userData: CreateUserData) => {
       return apiFetch<CreateUserResponse>('/users/create', {
@@ -64,7 +82,6 @@ export function useUsers() {
     },
   })
 
-  // Update user
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, ...userData }: UpdateUserData & { id: string }) => {
       return apiFetch(`/users/${id}`, {
@@ -77,7 +94,6 @@ export function useUsers() {
     },
   })
 
-  // Delete user
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       return apiFetch(`/users/${userId}`, {

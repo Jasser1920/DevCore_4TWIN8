@@ -4,6 +4,7 @@ import { apiFetch, getAvailableProjectManagers, assignProjectManager, unassignPr
 import { useResponsive } from '../../../hooks/useResponsive'
 import { exportCompanyDetailsToPDF } from '../../../lib/pdfExport'
 import { Button } from '../../../components/shared/UI'
+import { Status } from '../../../components/shared/UI'
 import { Download, UserPlus, Save, X } from 'lucide-react'
 
 export default function CompanyView() {
@@ -98,6 +99,11 @@ export default function CompanyView() {
     exportCompanyDetailsToPDF(company)
   }
 
+  const companyStatusTone: 'success' | 'error' | 'pending' | 'warning' | 'info' =
+    company.status === 'ACTIVE' ? 'success' : 'error'
+
+  const companyStatusLabel = company.status === 'ACTIVE' ? 'Active' : 'Inactive'
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: containerGap }}>
       {/* Company Details */}
@@ -135,18 +141,7 @@ export default function CompanyView() {
           </div>
           <div style={{ padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#f9fafb' }}>
             <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>Status</p>
-            <p style={{
-              margin: 0,
-              fontSize: '14px',
-              fontWeight: '600',
-              color: company.status === 'ACTIVE' ? '#059669' : '#dc2626',
-              display: 'inline-block',
-              padding: '4px 12px',
-              backgroundColor: company.status === 'ACTIVE' ? '#dcfce7' : '#fee2e2',
-              borderRadius: '4px'
-            }}>
-              {company.status}
-            </p>
+            <Status type={companyStatusTone} label={companyStatusLabel} size="small" icon={false} />
           </div>
           <div style={{ padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#f9fafb' }}>
             <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>Contact Name</p>
