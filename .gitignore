@@ -6,6 +6,10 @@ Thumbs.db
 smartsite-ai/venv/
 smartsite-ai/__pycache__/
 smartsite-ai/services/__pycache__/
-smartsite-ai/runs/
 smartsite-ai/dataset/
 smartsite-ai/*.pt
+smartsite-ai/runs/**
+!smartsite-ai/runs/detect/
+!smartsite-ai/runs/detect/train2/
+!smartsite-ai/runs/detect/train2/weights/
+!smartsite-ai/runs/detect/train2/weights/best.pt
