@@ -18,4 +18,8 @@ export class CreateMilestoneDto {
   @IsString({ each: true })
   @MaxLength(500, { each: true })
   evidenceAttachments?: string[];
+
+  @IsString()
+  @IsOptional()
+  predecessorId?: string;
 }

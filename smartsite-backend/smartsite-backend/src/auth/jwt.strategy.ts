@@ -35,10 +35,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Fetch MongoDB user by keycloakId to include mongoId and role in request
     const mongoUser = await this.userModel.findOne({ keycloakId: payload.sub });
     
+    // Determine role with fallback for bootstrap admin
+    let role = mongoUser?.role || null;
+    if (!role && (payload.preferred_username === 'admin' || payload.preferred_username === 'Admin')) {
+      role = 'SUPER_ADMIN';
+    }
+
     return {
       ...payload,
-      mongoId: mongoUser?._id?.toString() || null,
-      role: mongoUser?.role || null,
+      mongoId: mongoUser?._id?.toString() || payload.sub,
+      role,
       email: mongoUser?.email || payload.email,
       username: mongoUser?.username || payload.preferred_username,
     };

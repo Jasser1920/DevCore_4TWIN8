@@ -1,4 +1,4 @@
-﻿import { Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import './App.css'
 import ProtectedRoute from './components/ProtectedRoute'
 import ForgotPassword from './pages/ForgotPassword'
@@ -16,13 +16,12 @@ import NotificationToast from './components/NotificationToast'
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotificationToast } from './hooks/useNotificationToast'
-import { resolveNotificationRoute, type AppRole } from './lib/notificationRoutes'
-
-
+import { resolveNotificationRoute, defaultRouteByRole, type AppRole } from './lib/notificationRoutes'
 
 function App() {
   const [toast, setToast] = useState<{
-    message: string
+    title: string
+    description?: string
     onClick: () => void
   } | null>(null)
   const navigate = useNavigate()
@@ -30,9 +29,11 @@ function App() {
   // Callback to show toast when a new notification arrives
   const handleNewNotification = useCallback((item: any, role: AppRole) => {
     setToast({
-      message: item.title + (item.message ? ': ' + item.message : ''),
+      title: item.title,
+      description: item.message,
       onClick: () => {
-        const target = resolveNotificationRoute(item, role)
+        // Redirection to the central notifications page
+        const target = defaultRouteByRole(role)
         setToast(null)
         navigate(target.path)
       },
@@ -45,7 +46,8 @@ function App() {
     <>
       {toast && (
         <NotificationToast
-          message={toast.message}
+          title={toast.title}
+          description={toast.description}
           onClick={toast.onClick}
           onClose={() => setToast(null)}
         />

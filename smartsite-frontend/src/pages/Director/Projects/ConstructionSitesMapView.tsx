@@ -4,6 +4,7 @@ import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import { getDirectorConstructionSitesMap } from '../../../lib/api'
 import { useResponsive } from '../../../hooks/useResponsive'
 import { Status } from '../../../components/shared/UI'
+import SiteWeatherInfo from './SiteWeatherInfo'
 
 const statusColor: Record<string, string> = {
   APPROVED: '#0ea5e9',
@@ -140,10 +141,27 @@ export default function ConstructionSitesMapView() {
               }}
             >
               <Popup>
-                <div style={{ minWidth: '220px' }}>
-                  <div style={{ fontWeight: 700, color: '#0f172a' }}>{site.name}</div>
-                  <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
-                    {site.code} |{' '}
+                <div style={{ minWidth: '280px', padding: '4px' }}>
+                  {/* Real-time Weather Integration */}
+                  <SiteWeatherInfo latitude={site.latitude} longitude={site.longitude} />
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '15px' }}>{site.name}</div>
+                    <span style={{ 
+                      fontSize: '10px', 
+                      padding: '2px 8px', 
+                      borderRadius: '4px', 
+                      backgroundColor: site.risk === 'HIGH' ? '#fef2f2' : site.risk === 'MEDIUM' ? '#fffbeb' : '#f0fdf4',
+                      color: site.risk === 'HIGH' ? '#dc2626' : site.risk === 'MEDIUM' ? '#d97706' : '#16a34a',
+                      fontWeight: 700,
+                      border: `1px solid ${site.risk === 'HIGH' ? '#fecaca' : site.risk === 'MEDIUM' ? '#fde68a' : '#bcf0da'}`
+                    }}>
+                      {site.risk} RISK
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <span style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>{site.code}</span>
                     <Status
                       type={getSiteStatusTone(site.status)}
                       label={getSiteStatusLabel(site.status)}
@@ -151,16 +169,65 @@ export default function ConstructionSitesMapView() {
                       icon={false}
                     />
                   </div>
-                  <div style={{ fontSize: '12px', marginTop: '8px' }}>
-                    PM: {site.projectManagerName}
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
+                      <span style={{ color: '#64748b', fontWeight: 500 }}>Budget Consumption</span>
+                      <span style={{ fontWeight: 700, color: site.budgetConsumptionPercent > 90 ? '#dc2626' : '#0f172a' }}>
+                        {site.budgetConsumptionPercent}%
+                      </span>
+                    </div>
+                    <div style={{ height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{ 
+                        height: '100%', 
+                        width: `${Math.min(site.budgetConsumptionPercent, 100)}%`, 
+                        backgroundColor: site.budgetConsumptionPercent > 90 ? '#ef4444' : '#148ABB',
+                        borderRadius: '3px'
+                      }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '3px', color: '#64748b' }}>
+                      <span>{site.budgetConsumed.toLocaleString()} {site.currency}</span>
+                      <span>of {site.budgetPlanned.toLocaleString()} {site.currency}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#334155' }}>{site.projectManagerEmail}</div>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
+                      <span style={{ color: '#64748b', fontWeight: 500 }}>Overall Progress</span>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{site.progressPercent}%</span>
+                    </div>
+                    <div style={{ height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{ 
+                        height: '100%', 
+                        width: `${site.progressPercent}%`, 
+                        backgroundColor: '#16a34a',
+                        borderRadius: '3px'
+                      }} />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '11px', marginBottom: '12px', padding: '8px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: '10px', textTransform: 'uppercase', fontWeight: 700 }}>Start Date</div>
+                      <div style={{ fontWeight: 600, color: '#334155' }}>{new Date(site.startDate).toLocaleDateString()}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: '10px', textTransform: 'uppercase', fontWeight: 700 }}>End Date</div>
+                      <div style={{ fontWeight: 600, color: '#334155' }}>{new Date(site.endDate).toLocaleDateString()}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px', marginTop: '4px' }}>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>Project Manager</div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{site.projectManagerName}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>{site.projectManagerEmail}</div>
+                  </div>
+
                   {site.siteAddress && (
-                    <div style={{ fontSize: '12px', marginTop: '6px' }}>Address: {site.siteAddress}</div>
+                    <div style={{ marginTop: '8px', fontSize: '11px', color: '#475569', fontStyle: 'italic', display: 'flex', gap: '4px' }}>
+                      <span style={{ color: '#94a3b8' }}>📍</span> {site.siteAddress}
+                    </div>
                   )}
-                  <div style={{ fontSize: '12px', marginTop: '6px', color: '#334155' }}>
-                    {site.latitude.toFixed(6)}, {site.longitude.toFixed(6)}
-                  </div>
                 </div>
               </Popup>
             </CircleMarker>

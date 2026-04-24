@@ -55,27 +55,41 @@ export class InitService implements OnModuleInit {
 
       // Create user in Keycloak
       const adminToken = await this.authService.getAdminToken();
-      const keycloakUser = await this.authService.createKeycloakUser(
-        {
-          username: superAdminUsername,
-          email: superAdminEmail,
-          firstName: 'Super',
-          lastName: 'Admin',
-          enabled: true,
-        },
-        adminToken,
-      );
+      let keycloakUserId: string;
 
-      // Set password
-      await this.authService.setUserPassword(
-        keycloakUser.id,
-        superAdminPassword,
-        adminToken,
-      );
+      try {
+        const keycloakUser = await this.authService.createKeycloakUser(
+          {
+            username: superAdminUsername,
+            email: superAdminEmail,
+            firstName: 'Super',
+            lastName: 'Admin',
+            enabled: true,
+          },
+          adminToken,
+        );
+        keycloakUserId = keycloakUser.id;
+        
+        // Set password if newly created
+        await this.authService.setUserPassword(
+          keycloakUserId,
+          superAdminPassword,
+          adminToken,
+        );
+      } catch (error: any) {
+        if (error.response?.status === 409) {
+          console.log('ℹ️ Super admin already exists in Keycloak, fetching ID...');
+          const existingUser = await this.authService.getKeycloakUserByUsername(superAdminUsername, adminToken);
+          if (!existingUser) throw new Error('Could not find existing super admin in Keycloak');
+          keycloakUserId = existingUser.id;
+        } else {
+          throw error;
+        }
+      }
 
       // Assign SUPER_ADMIN role
       await this.authService.assignRole(
-        keycloakUser.id,
+        keycloakUserId,
         'SUPER_ADMIN',
         adminToken,
       );
@@ -83,11 +97,11 @@ export class InitService implements OnModuleInit {
       // Save to MongoDB
       // Note: SUPER_ADMIN bypasses email verification requirement
       await this.usersService.createUser({
-        keycloakId: keycloakUser.id,
+        keycloakId: keycloakUserId,
         username: superAdminUsername,
         email: superAdminEmail,
         role: 'SUPER_ADMIN',
-        isEmailVerified: true, // Super admin doesn't need email verification
+        isEmailVerified: true,
         emailVerificationToken: null,
         emailVerificationTokenExpire: null,
       });
@@ -149,34 +163,47 @@ export class InitService implements OnModuleInit {
         }
 
         // Create user in Keycloak
-        const keycloakUser = await this.authService.createKeycloakUser(
-          {
-            username: userConfig.username,
-            email: userConfig.email,
-            firstName: userConfig.firstName,
-            lastName: userConfig.lastName,
-            enabled: true,
-          },
-          adminToken,
-        );
+        let keycloakUserId: string;
+        try {
+          const keycloakUser = await this.authService.createKeycloakUser(
+            {
+              username: userConfig.username,
+              email: userConfig.email,
+              firstName: userConfig.firstName,
+              lastName: userConfig.lastName,
+              enabled: true,
+            },
+            adminToken,
+          );
+          keycloakUserId = keycloakUser.id;
 
-        // Set password
-        await this.authService.setUserPassword(
-          keycloakUser.id,
-          userConfig.password,
-          adminToken,
-        );
+          // Set password
+          await this.authService.setUserPassword(
+            keycloakUserId,
+            userConfig.password,
+            adminToken,
+          );
+        } catch (error: any) {
+          if (error.response?.status === 409) {
+            console.log(`ℹ️ ${userConfig.role} user already exists in Keycloak: ${userConfig.username}`);
+            const existingUser = await this.authService.getKeycloakUserByUsername(userConfig.username, adminToken);
+            if (!existingUser) throw new Error(`Could not find existing ${userConfig.role} user in Keycloak`);
+            keycloakUserId = existingUser.id;
+          } else {
+            throw error;
+          }
+        }
 
         // Assign role
         await this.authService.assignRole(
-          keycloakUser.id,
+          keycloakUserId,
           userConfig.role,
           adminToken,
         );
 
         // Save to MongoDB
         await this.usersService.createUser({
-          keycloakId: keycloakUser.id,
+          keycloakId: keycloakUserId,
           username: userConfig.username,
           email: userConfig.email,
           firstName: userConfig.firstName,

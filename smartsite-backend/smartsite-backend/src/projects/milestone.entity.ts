@@ -66,6 +66,9 @@ export class Milestone {
   @Column({ type: 'varchar', length: 255, nullable: true })
   validatedByClientId: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  predecessorId: string;
+
   @Column({
     type: 'enum',
     enum: MilestoneStatus,

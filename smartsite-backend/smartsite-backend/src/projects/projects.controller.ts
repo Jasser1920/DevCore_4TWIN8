@@ -587,4 +587,13 @@ async getRevenueByMonth(@Req() req: any) {
 
     return this.projectsService.startProject(id, req.user, this.requestMeta(req));
   }
+  @Get(':id/planning-analysis')
+  async getPlanningAnalysis(@Param('id') projectId: string, @Req() req: any) {
+    return this.projectsService.calculateProjectPlanningAnalysis(projectId, req.user);
+  }
+
+  @Get(':id/planning-ai-audit')
+  async getPlanningAiAudit(@Param('id') projectId: string, @Req() req: any) {
+    return this.projectsService.getAiPlanningAudit(projectId, req.user);
+  }
 }

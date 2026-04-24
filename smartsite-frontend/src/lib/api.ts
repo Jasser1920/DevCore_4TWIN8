@@ -413,11 +413,32 @@ export async function createMilestone(projectId: string, data: {
   description?: string
   plannedDate: string
   evidenceAttachments?: string[]
+  predecessorId?: string
 }) {
-  return apiFetch<MilestoneItem>('/projects/' + projectId + '/milestones', {
+  return apiFetch<MilestoneItem>(`/projects/${projectId}/milestones`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
+}
+
+export async function getProjectPlanningAnalysis(projectId: string) {
+  return apiFetch<{
+    projectId: string
+    projectName: string
+    tasks: Array<{
+      id: string
+      name: string
+      plannedDate: string
+      slackDays: number
+      isCritical: boolean
+      predecessorId?: string
+    }>
+    criticalPathIds: string[]
+  }>(`/projects/${projectId}/planning-analysis`)
+}
+
+export async function getProjectPlanningAiAudit(projectId: string) {
+  return apiFetch<{ recommendation: string }>(`/projects/${projectId}/planning-ai-audit`)
 }
 
 export async function uploadMilestoneAttachments(files: File[]) {

@@ -15,6 +15,7 @@ import {
 } from '../../../lib/api'
 import { useResponsive } from '../../../hooks/useResponsive'
 import { Status } from '../../../components/shared/UI'
+import PlanningControlView from './PlanningControlView'
 
 const riskColorMap: Record<DirectorProjectRisk, { bg: string; text: string; border: string }> = {
   LOW: { bg: '#ecfdf5', text: '#065f46', border: '#6ee7b7' },
@@ -75,6 +76,7 @@ export default function ProjectOverviewView() {
   const [selectedClientId, setSelectedClientId] = useState<string>('')
   const [startConfirmation, setStartConfirmation] = useState<string | null>(null)
   const [selectedQhseManagerId, setSelectedQhseManagerId] = useState<string>('')
+  const [viewMode, setViewMode] = useState<'KPI' | 'PLANNING'>('KPI')
   const qhseManagersQuery = useQuery({
     queryKey: ['director-available-qhse-managers'],
     queryFn: getDirectorAvailableQhseManagers,
@@ -433,9 +435,51 @@ export default function ProjectOverviewView() {
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: '10px' }}>Project Financial KPIs</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#111827' }}>Strategic Project Insights</h3>
+          <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
+            <button
+               onClick={() => setViewMode('KPI')}
+               style={{
+                 padding: '6px 12px',
+                 borderRadius: '6px',
+                 fontSize: '13px',
+                 fontWeight: 600,
+                 backgroundColor: viewMode === 'KPI' ? 'white' : 'transparent',
+                 color: viewMode === 'KPI' ? '#075B7A' : '#64748b',
+                 boxShadow: viewMode === 'KPI' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                 border: 'none',
+                 cursor: 'pointer',
+                 transition: 'all 0.2s'
+               }}
+            >
+              Financial KPIs
+            </button>
+            <button
+               onClick={() => setViewMode('PLANNING')}
+               style={{
+                 padding: '6px 12px',
+                 borderRadius: '6px',
+                 fontSize: '13px',
+                 fontWeight: 600,
+                 backgroundColor: viewMode === 'PLANNING' ? 'white' : 'transparent',
+                 color: viewMode === 'PLANNING' ? '#075B7A' : '#64748b',
+                 boxShadow: viewMode === 'PLANNING' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                 border: 'none',
+                 cursor: 'pointer',
+                 transition: 'all 0.2s'
+               }}
+            >
+              Planning Intelligence (AI)
+            </button>
+          </div>
+        </div>
 
-        {selectedProjectId && selectedProject && (
+        {selectedProjectId && selectedProject && viewMode === 'PLANNING' && (
+          <PlanningControlView projectId={selectedProjectId} />
+        )}
+
+        {selectedProjectId && selectedProject && viewMode === 'KPI' && (
           <>
             {/* Client Assignment Section */}
             <div style={{ marginBottom: '14px', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '12px' }}>

@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { promises as fs } from 'fs';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -65,6 +66,7 @@ export class ProjectsService {
     private readonly qhseCorrectiveActionsRepo: Repository<QhseCorrectiveAction>,
     private readonly activityLogsService: ActivityLogsService,
     private readonly usersService: UsersService,
+    private readonly configService: ConfigService,
   ) {}
 
   private async assertStrategicVisionApproved(companyId: string) {
@@ -646,19 +648,42 @@ async getGrowth(): Promise<number> {
           email: pmDirectory.get(id)?.email || 'N/A',
         })),
       },
-      data: filtered.map((project) => ({
-        id: project.id,
-        name: project.name,
-        code: project.code,
-        status: project.status,
-        latitude: Number(project.latitude),
-        longitude: Number(project.longitude),
-        siteAddress: project.siteAddress || '',
-        projectManagerId: project.projectManagerId,
-        projectManagerName: pmDirectory.get(project.projectManagerId)?.name || 'Unknown PM',
-        projectManagerEmail: pmDirectory.get(project.projectManagerId)?.email || 'N/A',
-        updatedAt: project.updatedAt,
-      })),
+      data: filtered.map((project) => {
+        const budgetPlanned = this.toNumber(project.budgetPlanned);
+        const budgetConsumed = this.toNumber(project.budgetConsumed);
+        const budgetConsumptionPercent = this.calculateBudgetConsumptionPercent(
+          budgetPlanned,
+          budgetConsumed,
+        );
+        const progressPercent = this.calculateProgressPercent(project);
+        const risk = this.calculateRiskLevel(
+          project.status,
+          budgetConsumptionPercent,
+          progressPercent,
+        );
+
+        return {
+          id: project.id,
+          name: project.name,
+          code: project.code,
+          status: project.status,
+          latitude: Number(project.latitude),
+          longitude: Number(project.longitude),
+          siteAddress: project.siteAddress || '',
+          projectManagerId: project.projectManagerId,
+          projectManagerName: pmDirectory.get(project.projectManagerId)?.name || 'Unknown PM',
+          projectManagerEmail: pmDirectory.get(project.projectManagerId)?.email || 'N/A',
+          budgetPlanned,
+          budgetConsumed,
+          budgetConsumptionPercent,
+          progressPercent,
+          risk,
+          currency: project.currency || 'USD',
+          startDate: project.startDate,
+          endDate: project.endDate,
+          updatedAt: project.updatedAt,
+        };
+      }),
     };
   }
 
@@ -850,6 +875,7 @@ async getGrowth(): Promise<number> {
       plannedDate,
       createdByPmId: reqUser.mongoId,
       evidenceAttachments: this.normalizeEvidenceAttachments(dto.evidenceAttachments),
+      predecessorId: dto.predecessorId,
       status: MilestoneStatus.PLANNED,
     });
 
@@ -1532,6 +1558,118 @@ async getGrowth(): Promise<number> {
       escalatedCount: toEscalate.length,
       reportId: dto.reportId || null,
       escalatedActionIds: toEscalate.map((item) => item.id),
+    };
+  }
+
+  async calculateProjectPlanningAnalysis(projectId: string, reqUser: any) {
+    const project = await this.projectsRepo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Project not found');
+
+    const milestones = await this.milestonesRepo.find({
+      where: { projectId },
+      order: { plannedDate: 'ASC' },
+    });
+
+    if (milestones.length === 0) {
+      return {
+        projectId,
+        projectName: project.name,
+        tasks: [],
+        criticalPathIds: [],
+      };
+    }
+
+    // --- CPM Algorithm Logic ---
+    // 1. Forward Pass (Early Start/Finish)
+    const taskMap = new Map<string, any>();
+    milestones.forEach((m) => {
+      taskMap.set(m.id, {
+        ...m,
+        earlyStart: 0,
+        earlyFinish: 0,
+        lateStart: 0,
+        lateFinish: 0,
+        slack: 0,
+        predecessors: m.predecessorId ? [m.predecessorId] : [],
+      });
+    });
+
+    const projectStart = new Date(project.startDate).getTime();
+
+    // Compute Early Start/Finish
+    milestones.forEach((m) => {
+      const task = taskMap.get(m.id);
+      const plannedTime = new Date(m.plannedDate).getTime();
+      
+      let maxPredecessorFinish = 0;
+      if (task.predecessors.length > 0) {
+        task.predecessors.forEach((pId) => {
+          const pred = taskMap.get(pId);
+          if (pred) maxPredecessorFinish = Math.max(maxPredecessorFinish, pred.earlyFinish);
+        });
+      }
+
+      task.earlyStart = maxPredecessorFinish;
+      // Duration is calculated as time from project start or predecessor finish to planned date
+      const duration = Math.max(0, (plannedTime - projectStart) - task.earlyStart);
+      task.earlyFinish = task.earlyStart + duration;
+    });
+
+    // 2. Backward Pass (Late Start/Finish)
+    const maxFinish = Math.max(...Array.from(taskMap.values()).map(t => t.earlyFinish));
+    [...milestones].reverse().forEach((m) => {
+      const task = taskMap.get(m.id);
+      
+      // Find tasks that depend on this one (successors)
+      const successors = Array.from(taskMap.values()).filter(t => t.predecessors.includes(m.id));
+      
+      if (successors.length === 0) {
+        task.lateFinish = maxFinish;
+      } else {
+        task.lateFinish = Math.min(...successors.map(s => s.lateStart));
+      }
+
+      const duration = task.earlyFinish - task.earlyStart;
+      task.lateStart = task.lateFinish - duration;
+      task.slack = task.lateStart - task.earlyStart;
+    });
+
+    const analyzedTasks = Array.from(taskMap.values());
+    const criticalPathIds = analyzedTasks.filter(t => t.slack <= 0).map(t => t.id);
+
+    return {
+      projectId,
+      projectName: project.name,
+      tasks: analyzedTasks.map(t => ({
+        id: t.id,
+        name: t.name,
+        plannedDate: t.plannedDate,
+        slackDays: Math.round(t.slack / (1000 * 60 * 60 * 24)),
+        isCritical: t.slack <= 0,
+        predecessorId: t.predecessorId,
+      })),
+      criticalPathIds,
+    };
+  }
+
+  async getAiPlanningAudit(projectId: string, reqUser: any) {
+    const analysis = await this.calculateProjectPlanningAnalysis(projectId, reqUser);
+    const criticalTasksNames = analysis.tasks
+      .filter(t => t.isCritical)
+      .map(t => t.name)
+      .join(', ');
+
+    const prompt = `You are a Senior Project Planning Engineer. 
+    Analyze the following Construction Project Critical Path:
+    Project: ${analysis.projectName}
+    Critical Path Tasks: ${criticalTasksNames}
+    Total Milestones: ${analysis.tasks.length}
+    
+    Provide a professional engineering audit (max 3 sentences) suggesting how to manage the risks on this path.`;
+
+    // Simulated AI response for now (to be replaced with actual Gemini call if API key provided)
+    return {
+      recommendation: `Engineering Audit: The critical path is primarily driven by ${criticalTasksNames}. Any further delay in these milestones will immediately push back the final delivery date. Recommendation: Tighten supervision on these specific phases and consider parallelizing resource allocation to reduce total duration.`,
     };
   }
 }

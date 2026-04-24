@@ -64,7 +64,10 @@ function NotificationCard({
         {!item.isRead && (
           <button
             disabled={isMutating}
-            onClick={() => onMarkRead(item.id)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMarkRead(item.id)
+            }}
             style={{
               border: '1px solid #148ABB',
               background: 'white',
