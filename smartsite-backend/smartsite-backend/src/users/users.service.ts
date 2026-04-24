@@ -22,12 +22,22 @@ export class UsersService {
     return this.userModel.findOne({ email });
   }
 
+  async getUserByKeycloakId(keycloakId: string) {
+    return this.userModel.findOne({ keycloakId });
+  }
+
   async getUserById(id: string) {
     return this.userModel.findById(id);
   }
 
   async updateUser(id: string, updateData: any) {
     return this.userModel.findByIdAndUpdate(id, updateData, { new: true });
+  }
+
+  async updateUserById(id: string, updateData: any) {
+    return this.userModel.findOneAndUpdate({ _id: id }, updateData, {
+      new: true,
+    });
   }
 
   async deleteUser(id: string) {

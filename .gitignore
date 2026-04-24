@@ -3,3 +3,9 @@ dist/
 .vite/
 .DS_Store
 Thumbs.db
+smartsite-ai/venv/
+smartsite-ai/__pycache__/
+smartsite-ai/services/__pycache__/
+smartsite-ai/runs/
+smartsite-ai/dataset/
+smartsite-ai/*.pt

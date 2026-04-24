@@ -12,6 +12,7 @@ import { Milestone } from './milestone.entity';
 import { QhseSiteReport } from './qhse-site-report.entity';
 import { QhseCorrectiveAction } from './qhse-corrective-action.entity';
 import { ApiUsageService } from '../common/api-usage.service';
+import { EmailService } from '../core/email.service';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { ApiUsageService } from '../common/api-usage.service';
     UsersModule,
   ],
   controllers: [ProjectsController],
-  providers: [ProjectsService, ApiUsageService],
+  providers: [ProjectsService, ApiUsageService, EmailService],
   exports: [ProjectsService],
 })
 export class ProjectsModule {}

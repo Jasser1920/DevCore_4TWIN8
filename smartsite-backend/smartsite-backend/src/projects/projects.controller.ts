@@ -420,6 +420,46 @@ async getRevenueByMonth(@Req() req: any) {
     return this.projectsService.getQhseAssignedSites(req.user);
   }
 
+  @Post('qhse/analyze-image')
+  async analyzeQhseImage(@Req() req: any, @Body() body: { attachmentUrl?: string }) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can analyze assigned site images');
+    }
+
+    return this.projectsService.analyzeQhseSiteImage(req.user, body?.attachmentUrl || '');
+  }
+
+  @Post('qhse/analyze-site-average')
+  async analyzeQhseSiteAverage(@Req() req: any, @Body() body: { projectId?: string }) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can analyze assigned site averages');
+    }
+
+    return this.projectsService.analyzeQhseSiteAverage(req.user, body?.projectId || '');
+  }
+
+  @Post('qhse/send-safety-report')
+  async sendQhseSiteSafetyReport(@Req() req: any, @Body() body: { projectId?: string }) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can email safety reports');
+    }
+
+    return this.projectsService.sendQhseSiteSafetyReport(
+      req.user,
+      body?.projectId || '',
+      this.requestMeta(req),
+    );
+  }
+
+  @Post('qhse/preview-safety-report')
+  async previewQhseSiteSafetyReport(@Req() req: any, @Body() body: { projectId?: string }) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can preview safety reports');
+    }
+
+    return this.projectsService.previewQhseSiteSafetyReport(req.user, body?.projectId || '');
+  }
+
   @Get('qhse/reports/queue')
   async getQhseReportQueue(@Req() req: any) {
     if (req.user.role !== 'QHSE_MANAGER') {

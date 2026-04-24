@@ -1,14 +1,19 @@
 // src/core/init.service.ts
 import { Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
-import { ConfigService } from '@nestjs/config';
 
 interface UserConfig {
   username: string;
   email: string;
-  password: string;
-  role: 'DIRECTOR' | 'PROJECT_MANAGER' | 'QHSE_MANAGER' | 'CLIENT';
+  password?: string;
+  role:
+    | 'SUPER_ADMIN'
+    | 'DIRECTOR'
+    | 'PROJECT_MANAGER'
+    | 'QHSE_MANAGER'
+    | 'CLIENT';
   firstName: string;
   lastName: string;
 }
@@ -23,85 +28,42 @@ export class InitService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      console.log('🚀 Initializing system users...');
-      await this.initializeSuperAdmin();
-      await this.initializeRoleBasedUsers();
-      console.log('✅ System initialization completed');
+      console.log('Initializing system users...');
+      const adminToken = await this.authService.getAdminToken();
+      await this.initializeSuperAdmin(adminToken);
+      await this.initializeRoleBasedUsers(adminToken);
+      console.log('System initialization completed');
     } catch (error) {
-      console.error('❌ Error initializing system:', error);
+      console.error('Error initializing system:', error);
     }
   }
 
-  /* ==========================================
-      Initialize Super Admin
-  ========================================== */
-  private async initializeSuperAdmin() {
-    const superAdminUsername = this.config.get('SUPER_ADMIN_USERNAME', 'admin');
-    const superAdminEmail = this.config.get('SUPER_ADMIN_EMAIL', 'admin@smartsite.com');
-    const superAdminPassword = this.config.get('SUPER_ADMIN_PASSWORD');
+  private async initializeSuperAdmin(adminToken: string) {
+    const superAdminPassword = this.config.get<string>('SUPER_ADMIN_PASSWORD');
 
     if (!superAdminPassword) {
-      console.warn('⚠️  SUPER_ADMIN_PASSWORD not set in environment');
+      console.warn('SUPER_ADMIN_PASSWORD not set in environment');
       return;
     }
 
     try {
-      // Check if super admin already exists
-      const exists = await this.usersService.getUserByUsername(superAdminUsername);
-      if (exists) {
-        console.log('✅ Super admin already exists');
-        return;
-      }
-
-      // Create user in Keycloak
-      const adminToken = await this.authService.getAdminToken();
-      const keycloakUser = await this.authService.createKeycloakUser(
+      await this.ensureSystemUser(
         {
-          username: superAdminUsername,
-          email: superAdminEmail,
+          username: this.config.get('SUPER_ADMIN_USERNAME', 'admin'),
+          email: this.config.get('SUPER_ADMIN_EMAIL', 'admin@smartsite.com'),
+          password: superAdminPassword,
+          role: 'SUPER_ADMIN',
           firstName: 'Super',
           lastName: 'Admin',
-          enabled: true,
         },
         adminToken,
       );
-
-      // Set password
-      await this.authService.setUserPassword(
-        keycloakUser.id,
-        superAdminPassword,
-        adminToken,
-      );
-
-      // Assign SUPER_ADMIN role
-      await this.authService.assignRole(
-        keycloakUser.id,
-        'SUPER_ADMIN',
-        adminToken,
-      );
-
-      // Save to MongoDB
-      // Note: SUPER_ADMIN bypasses email verification requirement
-      await this.usersService.createUser({
-        keycloakId: keycloakUser.id,
-        username: superAdminUsername,
-        email: superAdminEmail,
-        role: 'SUPER_ADMIN',
-        isEmailVerified: true, // Super admin doesn't need email verification
-        emailVerificationToken: null,
-        emailVerificationTokenExpire: null,
-      });
-
-      console.log('✅ Super admin created successfully');
     } catch (error: any) {
-      console.error('❌ Error creating super admin:', error.message);
+      console.error('Error creating super admin:', error.message);
     }
   }
 
-  /* ==========================================
-      Initialize Users with Each Role
-  ========================================== */
-  private async initializeRoleBasedUsers() {
+  private async initializeRoleBasedUsers(adminToken: string) {
     const userConfigs: UserConfig[] = [
       {
         username: this.config.get('DIRECTOR_USERNAME', 'director'),
@@ -114,7 +76,10 @@ export class InitService implements OnModuleInit {
       {
         username: this.config.get('PROJECT_MANAGER_USERNAME', 'project_manager'),
         email: this.config.get('PROJECT_MANAGER_EMAIL', 'pm@smartsite.com'),
-        password: this.config.get('PROJECT_MANAGER_PASSWORD', 'ProjectManager@123'),
+        password: this.config.get(
+          'PROJECT_MANAGER_PASSWORD',
+          'ProjectManager@123',
+        ),
         role: 'PROJECT_MANAGER',
         firstName: 'Project',
         lastName: 'Manager',
@@ -137,60 +102,113 @@ export class InitService implements OnModuleInit {
       },
     ];
 
-    const adminToken = await this.authService.getAdminToken();
-
     for (const userConfig of userConfigs) {
       try {
-        // Check if user already exists
-        const exists = await this.usersService.getUserByUsername(userConfig.username);
-        if (exists) {
-          console.log(`✅ ${userConfig.role} user already exists: ${userConfig.username}`);
-          continue;
-        }
+        await this.ensureSystemUser(userConfig, adminToken);
+      } catch (error: any) {
+        console.error(`Error creating ${userConfig.role} user:`, error.message);
+      }
+    }
+  }
 
-        // Create user in Keycloak
-        const keycloakUser = await this.authService.createKeycloakUser(
-          {
-            username: userConfig.username,
-            email: userConfig.email,
-            firstName: userConfig.firstName,
-            lastName: userConfig.lastName,
-            enabled: true,
-          },
-          adminToken,
-        );
+  private async ensureSystemUser(userConfig: UserConfig, adminToken: string) {
+    const mongoUserByUsername = await this.usersService.getUserByUsername(
+      userConfig.username,
+    );
+    const mongoUserByEmail = await this.usersService.getUserByEmail(
+      userConfig.email,
+    );
+    const mongoUser = mongoUserByUsername || mongoUserByEmail;
 
-        // Set password
-        await this.authService.setUserPassword(
-          keycloakUser.id,
-          userConfig.password,
-          adminToken,
-        );
+    let keycloakUser = await this.authService.findKeycloakUserByUsername(
+      userConfig.username,
+      adminToken,
+    );
 
-        // Assign role
-        await this.authService.assignRole(
-          keycloakUser.id,
-          userConfig.role,
-          adminToken,
-        );
+    if (!keycloakUser) {
+      keycloakUser = await this.authService.findKeycloakUserByEmail(
+        userConfig.email,
+        adminToken,
+      );
+    }
 
-        // Save to MongoDB
-        await this.usersService.createUser({
-          keycloakId: keycloakUser.id,
+    let wasCreatedInKeycloak = false;
+
+    if (!keycloakUser) {
+      keycloakUser = await this.authService.createKeycloakUser(
+        {
           username: userConfig.username,
           email: userConfig.email,
           firstName: userConfig.firstName,
           lastName: userConfig.lastName,
-          role: userConfig.role,
-          isEmailVerified: true, // For demo purposes, auto-verify
-          emailVerificationToken: null,
-          emailVerificationTokenExpire: null,
-        });
-
-        console.log(`✅ ${userConfig.role} user created successfully: ${userConfig.username}`);
-      } catch (error: any) {
-        console.error(`❌ Error creating ${userConfig.role} user:`, error.message);
-      }
+          enabled: true,
+        },
+        adminToken,
+      );
+      wasCreatedInKeycloak = true;
+    } else {
+      await this.authService.updateKeycloakUser(
+        keycloakUser.id,
+        {
+          username: userConfig.username,
+          email: userConfig.email,
+          firstName: userConfig.firstName,
+          lastName: userConfig.lastName,
+          enabled: true,
+        },
+        adminToken,
+      );
     }
+
+    if (!keycloakUser) {
+      throw new Error(`Unable to resolve Keycloak user for ${userConfig.username}`);
+    }
+
+    if (wasCreatedInKeycloak && userConfig.password) {
+      await this.authService.setUserPassword(
+        keycloakUser.id,
+        userConfig.password,
+        adminToken,
+      );
+    }
+
+    await this.authService.assignRole(
+      keycloakUser.id,
+      userConfig.role,
+      adminToken,
+    );
+
+    const userPayload = {
+      keycloakId: keycloakUser.id,
+      username: userConfig.username,
+      email: userConfig.email,
+      firstName: userConfig.firstName,
+      lastName: userConfig.lastName,
+      role: userConfig.role,
+      isEmailVerified: true,
+      emailVerificationToken: null,
+      emailVerificationTokenExpire: null,
+    };
+
+    if (mongoUser) {
+      await this.usersService.updateUserById(mongoUser.id, userPayload);
+      console.log(`${userConfig.role} user synced: ${userConfig.username}`);
+      return;
+    }
+
+    const mongoUserByKeycloakId = await this.usersService.getUserByKeycloakId(
+      keycloakUser.id,
+    );
+
+    if (mongoUserByKeycloakId) {
+      await this.usersService.updateUserById(mongoUserByKeycloakId.id, userPayload);
+      console.log(
+        `${userConfig.role} user linked by Keycloak ID: ${userConfig.username}`,
+      );
+      return;
+    }
+
+    await this.usersService.createUser(userPayload);
+    console.log(`${userConfig.role} user created successfully: ${userConfig.username}`);
   }
 }

@@ -170,6 +170,12 @@ export type ProjectItem = {
   latestValidationComment?: string
   submittedAt?: string
   validatedAt?: string
+  siteImages?: Array<{
+    url: string
+    reportId: string
+    reportStatus: QhseReportStatus
+    submittedAt?: string | null
+  }>
   status: ProjectStatus
   createdAt: string
   updatedAt: string
@@ -546,6 +552,104 @@ export async function submitQhseSiteReport(projectId: string, data: { summary: s
 export async function getQhseAssignedSites() {
   return apiFetch<ProjectItem[]>('/projects/qhse/assigned-sites', {
     method: 'GET',
+  })
+}
+
+export async function analyzeQhseImage(attachmentUrl: string) {
+  return apiFetch<{
+    attachmentUrl: string
+    reportId: string
+    project: {
+      id: string
+      name: string
+      code: string
+    }
+    analysis: {
+      persons: number
+      helmets: number
+      vests: number
+      no_helmet: number
+      no_vest: number
+      ppe_compliance_percent: number
+    }
+  }>('/projects/qhse/analyze-image', {
+    method: 'POST',
+    body: JSON.stringify({ attachmentUrl }),
+  })
+}
+
+export async function analyzeQhseSiteAverage(projectId: string) {
+  return apiFetch<{
+    project: {
+      id: string
+      name: string
+      code: string
+    }
+    imageCount: number
+    analysis: {
+      persons: number
+      helmets: number
+      vests: number
+      no_helmet: number
+      no_vest: number
+      ppe_compliance_percent: number
+    }
+    analyzedImages: string[]
+  }>('/projects/qhse/analyze-site-average', {
+    method: 'POST',
+    body: JSON.stringify({ projectId }),
+  })
+}
+
+export async function sendQhseSiteSafetyReport(projectId: string) {
+  return apiFetch<{
+    success: boolean
+    director: {
+      id: string
+      name: string
+      email: string
+    }
+    project: {
+      id: string
+      name: string
+      code: string
+    }
+    report: {
+      complianceScore: number
+      imageCount: number
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
+      summary: string
+      recommendations: string[]
+    }
+    message: string
+  }>('/projects/qhse/send-safety-report', {
+    method: 'POST',
+    body: JSON.stringify({ projectId }),
+  })
+}
+
+export async function previewQhseSiteSafetyReport(projectId: string) {
+  return apiFetch<{
+    director: {
+      id: string
+      name: string
+      email: string
+    }
+    project: {
+      id: string
+      name: string
+      code: string
+    }
+    report: {
+      complianceScore: number
+      imageCount: number
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
+      summary: string
+      recommendations: string[]
+    }
+  }>('/projects/qhse/preview-safety-report', {
+    method: 'POST',
+    body: JSON.stringify({ projectId }),
   })
 }
 

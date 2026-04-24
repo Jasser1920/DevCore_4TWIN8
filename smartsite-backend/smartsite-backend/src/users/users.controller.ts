@@ -52,18 +52,93 @@ export class UsersController {
     }
 
     try {
+      const normalizedUsername = body.username.trim();
+      const normalizedEmail = body.email.trim().toLowerCase();
+      const existingMongoUserByUsername =
+        await this.usersService.getUserByUsername(normalizedUsername);
+      if (existingMongoUserByUsername) {
+        throw new BadRequestException(
+          `Username "${normalizedUsername}" already exists`,
+        );
+      }
+
+      const existingMongoUserByEmail =
+        await this.usersService.getUserByEmail(normalizedEmail);
+      if (existingMongoUserByEmail) {
+        throw new BadRequestException(
+          `Email "${normalizedEmail}" already exists`,
+        );
+      }
       // ✅ Step 2: Create user in Keycloak
       const adminToken = await this.authService.getAdminToken();
-      const keycloakUser = await this.authService.createKeycloakUser(
-        {
-          username: body.username,
-          email: body.email,
-          firstName: body.firstName,
-          lastName: body.lastName,
-          enabled: true,
-        },
-        adminToken,
-      );
+      const existingKeycloakByUsername =
+        await this.authService.findKeycloakUserByUsername(
+          normalizedUsername,
+          adminToken,
+        );
+      const existingKeycloakByEmail =
+        await this.authService.findKeycloakUserByEmail(
+          normalizedEmail,
+          adminToken,
+        );
+
+      if (
+        existingKeycloakByUsername &&
+        existingKeycloakByEmail &&
+        existingKeycloakByUsername.id !== existingKeycloakByEmail.id
+      ) {
+        throw new BadRequestException(
+          'The requested username and email are already linked to different accounts in Keycloak',
+        );
+      }
+
+      if (
+        existingKeycloakByUsername &&
+        existingKeycloakByUsername.email &&
+        existingKeycloakByUsername.email.toLowerCase() !== normalizedEmail
+      ) {
+        throw new BadRequestException(
+          `Username "${normalizedUsername}" already exists`,
+        );
+      }
+
+      if (
+        existingKeycloakByEmail &&
+        existingKeycloakByEmail.username &&
+        existingKeycloakByEmail.username !== normalizedUsername
+      ) {
+        throw new BadRequestException(
+          `Email "${normalizedEmail}" already exists`,
+        );
+      }
+
+      const keycloakUser =
+        existingKeycloakByUsername ??
+        existingKeycloakByEmail ??
+        (await this.authService.createKeycloakUser(
+          {
+            username: normalizedUsername,
+            email: normalizedEmail,
+            firstName: body.firstName,
+            lastName: body.lastName,
+            enabled: true,
+          },
+          adminToken,
+        ));
+
+      if (existingKeycloakByUsername || existingKeycloakByEmail) {
+        await this.authService.updateKeycloakUser(
+          keycloakUser.id,
+          {
+            username: normalizedUsername,
+            email: normalizedEmail,
+            firstName: body.firstName,
+            lastName: body.lastName,
+            enabled: true,
+          },
+          adminToken,
+        );
+      }
 
       // ✅ Step 3: Set password in Keycloak
       await this.authService.setUserPassword(
@@ -85,8 +160,8 @@ export class UsersController {
       // ✅ Step 6: Save to MongoDB with verification token
       const user = await this.usersService.createUser({
         keycloakId: keycloakUser.id,
-        username: body.username,
-        email: body.email,
+        username: normalizedUsername,
+        email: normalizedEmail,
         firstName: body.firstName,
         lastName: body.lastName,
         role: body.role,
@@ -99,11 +174,11 @@ export class UsersController {
       // ✅ Step 7: Send Email Verification Link
       try {
         await this.emailService.sendEmailVerificationLink(
-          body.email,
+          normalizedEmail,
           body.firstName,
           verificationToken,
           {
-            username: body.username,
+            username: normalizedUsername,
             password: body.password,
           },
         );
@@ -119,7 +194,7 @@ export class UsersController {
         action: 'USER_CREATED',
         description: `User ${user.username} created by ${req.user.preferred_username || 'admin'}`,
         details: {
-          email: body.email,
+          email: normalizedEmail,
           role: body.role,
           firstName: body.firstName,
           lastName: body.lastName,
@@ -141,6 +216,9 @@ export class UsersController {
       };
     } catch (error: any) {
       console.error('Error creating user:', error.message);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       throw new BadRequestException(
         `Failed to create user: ${error.message}`,
       );
@@ -281,11 +359,69 @@ export class UsersController {
   async updateProfile(@Req() req: any, @Body() updateData: any) {
     try {
       const userId = req.user.mongoId;
-      
+      const currentUser = await this.usersService.getUserById(userId);
+
+      if (!currentUser) {
+        throw new NotFoundException('User not found');
+      }
+
       // Don't allow changing role or keycloakId through profile update
       const { role, keycloakId, ...allowedUpdates } = updateData;
-      
-      const updatedUser = await this.usersService.updateUser(userId, allowedUpdates);
+      const normalizedUpdates: any = { ...allowedUpdates };
+
+      if (typeof normalizedUpdates.email === 'string') {
+        normalizedUpdates.email = normalizedUpdates.email.trim().toLowerCase();
+      }
+
+      if (typeof normalizedUpdates.firstName === 'string') {
+        normalizedUpdates.firstName = normalizedUpdates.firstName.trim();
+      }
+
+      if (typeof normalizedUpdates.lastName === 'string') {
+        normalizedUpdates.lastName = normalizedUpdates.lastName.trim();
+      }
+
+      if (normalizedUpdates.email && normalizedUpdates.email !== currentUser.email) {
+        const existingUserWithEmail = await this.usersService.getUserByEmail(normalizedUpdates.email);
+        if (
+          existingUserWithEmail &&
+          existingUserWithEmail._id?.toString?.() !== currentUser._id?.toString?.()
+        ) {
+          throw new BadRequestException(`Email "${normalizedUpdates.email}" already exists`);
+        }
+      }
+
+      if (currentUser.keycloakId) {
+        const adminToken = await this.authService.getAdminToken();
+
+        if (normalizedUpdates.email && normalizedUpdates.email !== currentUser.email) {
+          const existingKeycloakByEmail = await this.authService.findKeycloakUserByEmail(
+            normalizedUpdates.email,
+            adminToken,
+          );
+          if (existingKeycloakByEmail && existingKeycloakByEmail.id !== currentUser.keycloakId) {
+            throw new BadRequestException(`Email "${normalizedUpdates.email}" already exists`);
+          }
+        }
+
+        await this.authService.updateKeycloakUser(
+          currentUser.keycloakId,
+          {
+            username: currentUser.username,
+            email: normalizedUpdates.email || currentUser.email,
+            firstName: normalizedUpdates.firstName ?? currentUser.firstName,
+            lastName: normalizedUpdates.lastName ?? currentUser.lastName,
+            enabled: true,
+          },
+          adminToken,
+        );
+      }
+
+      if (normalizedUpdates.email && normalizedUpdates.email !== currentUser.email) {
+        normalizedUpdates.isEmailVerified = false;
+      }
+
+      const updatedUser = await this.usersService.updateUser(userId, normalizedUpdates);
       
       if (!updatedUser) {
         throw new NotFoundException('User not found');
@@ -297,7 +433,7 @@ export class UsersController {
         username: updatedUser.username,
         action: 'PROFILE_UPDATED',
         description: `User ${updatedUser.username} updated their profile`,
-        details: allowedUpdates,
+        details: normalizedUpdates,
         status: 'SUCCESS',
       });
 

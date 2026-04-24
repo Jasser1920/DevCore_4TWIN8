@@ -5,6 +5,15 @@ import { EmailService } from '../core/email.service';
 import { UsersService } from '../users/users.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 
+type KeycloakUserSummary = {
+  id: string;
+  username?: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  enabled?: boolean;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -450,6 +459,76 @@ async createKeycloakUser(userData: any, adminToken: string) {
   // Extract user ID from location header
   const userId = response.headers.location.split('/').pop();
   return { id: userId, ...userData };
+}
+
+async findKeycloakUserByUsername(
+  username: string,
+  adminToken: string,
+): Promise<KeycloakUserSummary | null> {
+  const normalizedUsername = (username || '').trim();
+  if (!normalizedUsername) {
+    return null;
+  }
+
+  const url = `${this.config.get<string>('KEYCLOAK_URL')}/admin/realms/${this.config.get<string>('REALM')}/users?username=${encodeURIComponent(normalizedUsername)}&exact=true`;
+
+  const response = await axios.get(url, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+
+  return response.data?.[0] ?? null;
+}
+
+async findKeycloakUserByEmail(
+  email: string,
+  adminToken: string,
+): Promise<KeycloakUserSummary | null> {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const url = `${this.config.get<string>('KEYCLOAK_URL')}/admin/realms/${this.config.get<string>('REALM')}/users?email=${encodeURIComponent(normalizedEmail)}`;
+
+  const response = await axios.get(url, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+
+  const exactMatch = (response.data || []).find(
+    (user: KeycloakUserSummary) =>
+      user.email?.toLowerCase() === normalizedEmail,
+  );
+
+  return exactMatch ?? null;
+}
+
+async updateKeycloakUser(
+  userId: string,
+  userData: {
+    username: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    enabled?: boolean;
+  },
+  adminToken: string,
+) {
+  const url = `${this.config.get<string>('KEYCLOAK_URL')}/admin/realms/${this.config.get<string>('REALM')}/users/${userId}`;
+
+  await axios.put(
+    url,
+    {
+      username: userData.username,
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      enabled: userData.enabled ?? true,
+      emailVerified: false,
+    },
+    {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    },
+  );
 }
 
 async setUserPassword(userId: string, password: string, adminToken: string) {

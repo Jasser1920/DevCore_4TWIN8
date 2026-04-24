@@ -422,4 +422,91 @@ export class EmailService {
       html: htmlContent,
     });
   }
+  async sendSiteSafetyReportToDirector(
+    to: string,
+    data: {
+      directorName: string;
+      siteName: string;
+      siteCode: string;
+      siteAddress?: string | null;
+      complianceScore: number;
+      imageCount: number;
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+      summary: string;
+      recommendations: string[];
+    },
+  ): Promise<void> {
+    const frontendUrl = this.config.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    const recommendationsHtml = data.recommendations
+      .map((item) => `<li style="margin-bottom: 6px;">${item}</li>`)
+      .join('');
+
+    const scoreColor =
+      data.complianceScore >= 80 ? '#166534' : data.complianceScore >= 60 ? '#92400e' : '#b91c1c';
+    const scoreBackground =
+      data.complianceScore >= 80 ? '#dcfce7' : data.complianceScore >= 60 ? '#fef3c7' : '#fee2e2';
+
+    const htmlContent = `
+      <div style="margin: 0; padding: 0; background-color: #f4f9fb; font-family: Arial, sans-serif;">
+        <div style="max-width: 640px; margin: 0 auto; padding: 24px 16px;">
+          <div style="background: linear-gradient(135deg, #075B7A, #148ABB); color: #ffffff; border-radius: 14px 14px 0 0; padding: 24px;">
+            <p style="margin: 0; font-size: 13px; opacity: 0.9; letter-spacing: 0.5px;">SMARTSITE</p>
+            <h1 style="margin: 8px 0 0 0; font-size: 24px;">Site Safety AI Report</h1>
+            <p style="margin: 10px 0 0 0; font-size: 14px; opacity: 0.95;">AI-generated PPE compliance summary for your assigned construction site</p>
+          </div>
+
+          <div style="background-color: #ffffff; border: 1px solid #d7eef5; border-top: none; border-radius: 0 0 14px 14px; padding: 24px;">
+            <p style="margin: 0 0 12px 0; color: #1f2937;">Hello <strong>${data.directorName}</strong>,</p>
+            <p style="margin: 0 0 18px 0; color: #4b5563; line-height: 1.6;">
+              A QHSE AI safety review has been generated for one of your sites based on worker PPE compliance detected in submitted site images.
+            </p>
+
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 0 0 18px 0;">
+              <p style="margin: 0 0 10px 0; color: #111827; font-weight: 700; font-size: 16px;">Site Information</p>
+              <p style="margin: 0 0 6px 0; color: #374151;"><strong>Site:</strong> ${data.siteName}</p>
+              <p style="margin: 0 0 6px 0; color: #374151;"><strong>Code:</strong> ${data.siteCode}</p>
+              <p style="margin: 0 0 6px 0; color: #374151;"><strong>Address:</strong> ${data.siteAddress || 'Not provided'}</p>
+              <p style="margin: 0; color: #374151;"><strong>Images analyzed:</strong> ${data.imageCount}</p>
+            </div>
+
+            <div style="background-color: ${scoreBackground}; border-radius: 12px; padding: 18px; margin: 0 0 18px 0;">
+              <p style="margin: 0 0 6px 0; color: #475569; font-size: 12px; text-transform: uppercase; font-weight: 700;">Compliance Score</p>
+              <p style="margin: 0; color: ${scoreColor}; font-size: 34px; font-weight: 800;">${data.complianceScore}%</p>
+              <p style="margin: 8px 0 0 0; color: #334155;"><strong>Risk Level:</strong> ${data.riskLevel}</p>
+            </div>
+
+            <div style="margin: 0 0 18px 0;">
+              <p style="margin: 0 0 8px 0; color: #111827; font-weight: 700;">Assessment Summary</p>
+              <p style="margin: 0; color: #4b5563; line-height: 1.6;">${data.summary}</p>
+            </div>
+
+            <div style="margin: 0 0 18px 0;">
+              <p style="margin: 0 0 8px 0; color: #111827; font-weight: 700;">Recommended Actions</p>
+              <ul style="margin: 0; padding-left: 18px; color: #4b5563; line-height: 1.6;">
+                ${recommendationsHtml}
+              </ul>
+            </div>
+
+            <div style="text-align: center; margin: 22px 0;">
+              <a href="${frontendUrl}" style="display: inline-block; background-color: #148ABB; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px;">
+                Open SmartSite
+              </a>
+            </div>
+
+            <div style="margin-top: 24px; padding-top: 14px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px;">
+              <p style="margin: 0 0 6px 0;"><strong>SmartSite Team</strong></p>
+              <p style="margin: 0;"><em>This is an automated AI-assisted safety notification. Please do not reply.</em></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await this.transporter.sendMail({
+      from: this.config.get<string>('GMAIL_USER'),
+      to,
+      subject: `SmartSite - AI Safety Report for ${data.siteName} (${data.complianceScore}%)`,
+      html: htmlContent,
+    });
+  }
 }

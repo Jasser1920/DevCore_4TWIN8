@@ -38,6 +38,7 @@ import GuidedTourOverlay from '../components/shared/GuidedTourOverlay'
 import FloatingTutorialButton from '../components/shared/FloatingTutorialButton'
 
 const MAX_PM_ONGOING_PROJECTS = 3
+const MAX_QHSE_REPORT_IMAGES = 10
 
 const LayoutDashboard = ({ style }: { style?: React.CSSProperties }) => (
   <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -116,6 +117,28 @@ export default function ProjectManager() {
   const [qhseReportDropActive, setQhseReportDropActive] = useState(false)
   const [milestoneEvidenceFiles, setMilestoneEvidenceFiles] = useState<File[]>([])
   const [milestoneAttachmentDropActive, setMilestoneAttachmentDropActive] = useState(false)
+
+  const mergeQhseReportImages = (existingFiles: File[], incomingFiles: File[]) => {
+    const imageFiles = incomingFiles.filter((file) => file.type.startsWith('image/'))
+    const merged = [...existingFiles]
+
+    for (const file of imageFiles) {
+      const duplicate = merged.some(
+        (item) =>
+          item.name === file.name &&
+          item.size === file.size &&
+          item.lastModified === file.lastModified,
+      )
+      if (!duplicate) {
+        merged.push(file)
+      }
+      if (merged.length >= MAX_QHSE_REPORT_IMAGES) {
+        break
+      }
+    }
+
+    return merged.slice(0, MAX_QHSE_REPORT_IMAGES)
+  }
 
   const projectsQuery = useQuery({
     queryKey: ['pm-projects'],
@@ -1398,10 +1421,9 @@ export default function ProjectManager() {
                     event.preventDefault()
                     event.stopPropagation()
                     setQhseReportDropActive(false)
-                    setQhseReportFiles((prev) => {
-                      const droppedFiles = Array.from(event.dataTransfer.files || [])
-                      return [...prev, ...droppedFiles].slice(0, 10)
-                    })
+                    setQhseReportFiles((prev) =>
+                      mergeQhseReportImages(prev, Array.from(event.dataTransfer.files || [])),
+                    )
                   }}
                   style={{
                     display: 'grid',
@@ -1412,7 +1434,7 @@ export default function ProjectManager() {
                     backgroundColor: qhseReportDropActive ? '#ecfeff' : '#f8fafc',
                   }}
                 >
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>QHSE report attachments</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>QHSE report images</span>
                   <label
                     style={{
                       display: 'grid',
@@ -1426,24 +1448,33 @@ export default function ProjectManager() {
                       cursor: 'pointer',
                     }}
                   >
-                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>Drag & drop files here</strong>
+                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>Drag & drop one or more images here</strong>
                     <span style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center' }}>
-                      Or click to browse images or PDF files. Up to 10 files.
+                      Or click to browse and select multiple images at once. Up to 10 images.
                     </span>
                     <input
                       type="file"
                       multiple
-                      accept="image/*,.pdf"
+                      accept="image/*"
                       onChange={(event) => {
-                        setQhseReportFiles((prev) => {
-                          const selectedFiles = Array.from(event.target.files || [])
-                          return [...prev, ...selectedFiles].slice(0, 10)
-                        })
+                        setQhseReportFiles((prev) =>
+                          mergeQhseReportImages(prev, Array.from(event.target.files || [])),
+                        )
                         event.currentTarget.value = ''
                       }}
                       style={{ display: 'none' }}
                     />
                   </label>
+
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                    Add several site images in one drop or in multiple drops. Supported files: images only.
+                  </div>
+
+                  {qhseReportFiles.length > 0 ? (
+                    <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600 }}>
+                      {qhseReportFiles.length} / {MAX_QHSE_REPORT_IMAGES} image{qhseReportFiles.length === 1 ? '' : 's'} selected
+                    </div>
+                  ) : null}
 
                   {qhseReportFiles.length > 0 ? (
                     <div style={{ display: 'grid', gap: '4px' }}>
@@ -1464,6 +1495,9 @@ export default function ProjectManager() {
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600, wordBreak: 'break-all' }}>
                               {file.name}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>
+                              {Math.max(file.size / 1024, 1).toFixed(1)} KB
                             </div>
                           </div>
                           <button

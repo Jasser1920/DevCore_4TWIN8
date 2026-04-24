@@ -39,12 +39,23 @@ import {
 import { CreateQhseCorrectiveActionsDto } from './dto/create-qhse-corrective-actions.dto';
 import { UpdateQhseCorrectiveActionDto } from './dto/update-qhse-corrective-action.dto';
 import { RunQhseEscalationDto } from './dto/run-qhse-escalation.dto';
+import { EmailService } from '../core/email.service';
 
 type ProjectRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 type ProjectOverviewSortBy = 'lastUpdatedAt' | 'risk' | 'budgetConsumptionPercent';
 type SortOrder = 'asc' | 'desc';
 
 const MAX_PM_ONGOING_PROJECTS = 3;
+const IMAGE_ATTACHMENT_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const UPLOADS_DIR = join(process.cwd(), 'uploads', 'milestone-evidence');
+type PpeAnalysisResult = {
+  persons: number;
+  helmets: number;
+  vests: number;
+  no_helmet: number;
+  no_vest: number;
+  ppe_compliance_percent: number;
+};
 
 @Injectable()
 export class ProjectsService {
@@ -65,6 +76,7 @@ export class ProjectsService {
     private readonly qhseCorrectiveActionsRepo: Repository<QhseCorrectiveAction>,
     private readonly activityLogsService: ActivityLogsService,
     private readonly usersService: UsersService,
+    private readonly emailService: EmailService,
   ) {}
 
   private async assertStrategicVisionApproved(companyId: string) {
@@ -331,6 +343,79 @@ async getGrowth(): Promise<number> {
       .map((item) => (typeof item === 'string' ? item.trim() : ''))
       .filter((item) => item.length > 0)
       .slice(0, 20);
+  }
+
+  private isImageAttachment(path: string) {
+    const normalizedPath = path.toLowerCase();
+    return Array.from(IMAGE_ATTACHMENT_EXTENSIONS).some((extension) =>
+      normalizedPath.endsWith(extension),
+    );
+  }
+
+  private inferAttachmentContentType(path: string) {
+    const normalizedPath = path.toLowerCase();
+    if (normalizedPath.endsWith('.png')) return 'image/png';
+    if (normalizedPath.endsWith('.gif')) return 'image/gif';
+    if (normalizedPath.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  private async runAiAnalysisForAttachment(attachmentUrl: string): Promise<PpeAnalysisResult> {
+    const filename = attachmentUrl.replace('/projects/uploads/', '');
+    const filePath = join(UPLOADS_DIR, filename);
+
+    let imageBuffer: Buffer;
+    try {
+      imageBuffer = await fs.readFile(filePath);
+    } catch {
+      throw new NotFoundException('Attachment file not found');
+    }
+
+    const aiBaseUrl = (process.env.SMARTSITE_AI_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+    const formData = new FormData();
+    formData.append(
+      'file',
+      new Blob([new Uint8Array(imageBuffer)], {
+        type: this.inferAttachmentContentType(attachmentUrl),
+      }),
+      filename,
+    );
+
+    let response: Response;
+    try {
+      response = await fetch(`${aiBaseUrl}/analyze`, {
+        method: 'POST',
+        body: formData,
+      });
+    } catch {
+      throw new BadRequestException('AI service is unavailable. Start smartsite-ai and try again.');
+    }
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new BadRequestException(
+        payload?.message || payload?.error || 'AI analysis failed for this image',
+      );
+    }
+
+    return payload?.data || payload;
+  }
+
+  private buildAttachmentLookupQuery<T extends { attachments?: string[]; evidenceAttachments?: string[] }>(
+    alias: string,
+    columnName: 'attachments' | 'evidenceAttachments',
+  ) {
+    return `EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements_text(${alias}.${columnName}) AS attachment
+      WHERE attachment = :attachmentPath
+    )`;
   }
 
   private makeProjectCode(companyName: string, count: number): string {
@@ -923,6 +1008,38 @@ async getGrowth(): Promise<number> {
       .getOne();
 
     if (!milestone?.project) {
+      const qhseReport = await this.qhseReportsRepo
+        .createQueryBuilder('report')
+        .leftJoinAndSelect('report.project', 'project')
+        .where(this.buildAttachmentLookupQuery('report', 'attachments'), { attachmentPath })
+        .orderBy('report.updatedAt', 'DESC')
+        .getOne();
+
+      if (!qhseReport?.project) {
+        return false;
+      }
+
+      if (reqUser.role === 'SUPER_ADMIN') {
+        return true;
+      }
+
+      if (reqUser.role === 'PROJECT_MANAGER') {
+        return qhseReport.project.projectManagerId === reqUser.mongoId;
+      }
+
+      if (reqUser.role === 'QHSE_MANAGER') {
+        return qhseReport.assignedQhseManagerId === reqUser.mongoId;
+      }
+
+      if (reqUser.role === 'DIRECTOR') {
+        try {
+          const company = await this.ensureDirectorCompany(reqUser.mongoId);
+          return qhseReport.project.companyId === company.id;
+        } catch {
+          return false;
+        }
+      }
+
       return false;
     }
 
@@ -1289,10 +1406,315 @@ async getGrowth(): Promise<number> {
   }
 
   async getQhseAssignedSites(reqUser: any) {
-    return this.projectsRepo.find({
+    const projects = await this.projectsRepo.find({
       where: { qhseManagerId: reqUser.mongoId },
       order: { updatedAt: 'DESC' },
     });
+
+    if (!projects.length) {
+      return [];
+    }
+
+    const reports = await this.qhseReportsRepo.find({
+      where: {
+        assignedQhseManagerId: reqUser.mongoId,
+        projectId: In(projects.map((project) => project.id)),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    const imagesByProject = new Map<string, Array<{
+      url: string;
+      reportId: string;
+      reportStatus: QhseSiteReportStatus;
+      submittedAt: Date | null;
+    }>>();
+
+    for (const report of reports) {
+      const reportImages = Array.isArray(report.attachments)
+        ? report.attachments.filter((attachment) => this.isImageAttachment(attachment))
+        : [];
+
+      if (!reportImages.length) continue;
+
+      const current = imagesByProject.get(report.projectId) || [];
+      for (const attachment of reportImages) {
+        if (current.some((item) => item.url === attachment)) continue;
+        current.push({
+          url: attachment,
+          reportId: report.id,
+          reportStatus: report.status,
+          submittedAt: report.submittedAt || null,
+        });
+      }
+      imagesByProject.set(report.projectId, current);
+    }
+
+    return projects.map((project) => ({
+      ...project,
+      siteImages: imagesByProject.get(project.id) || [],
+    }));
+  }
+
+  async analyzeQhseSiteImage(reqUser: any, attachmentUrl: string) {
+    const normalizedAttachmentUrl = typeof attachmentUrl === 'string' ? attachmentUrl.trim() : '';
+    if (!normalizedAttachmentUrl) {
+      throw new BadRequestException('attachmentUrl is required');
+    }
+
+    if (!normalizedAttachmentUrl.startsWith('/projects/uploads/')) {
+      throw new BadRequestException('Only uploaded site images can be analyzed');
+    }
+
+    if (!this.isImageAttachment(normalizedAttachmentUrl)) {
+      throw new BadRequestException('Only image attachments can be analyzed');
+    }
+
+    const report = await this.qhseReportsRepo
+      .createQueryBuilder('report')
+      .leftJoinAndSelect('report.project', 'project')
+      .where('report.assignedQhseManagerId = :assignedQhseManagerId', {
+        assignedQhseManagerId: reqUser.mongoId,
+      })
+      .andWhere(this.buildAttachmentLookupQuery('report', 'attachments'), {
+        attachmentPath: normalizedAttachmentUrl,
+      })
+      .orderBy('report.updatedAt', 'DESC')
+      .getOne();
+
+    if (!report?.project) {
+      throw new ForbiddenException('You can only analyze images from your assigned sites');
+    }
+
+    return {
+      attachmentUrl: normalizedAttachmentUrl,
+      reportId: report.id,
+      project: {
+        id: report.project.id,
+        name: report.project.name,
+        code: report.project.code,
+      },
+      analysis: await this.runAiAnalysisForAttachment(normalizedAttachmentUrl),
+    };
+  }
+
+  async analyzeQhseSiteAverage(reqUser: any, projectId: string) {
+    const normalizedProjectId = typeof projectId === 'string' ? projectId.trim() : '';
+    if (!normalizedProjectId) {
+      throw new BadRequestException('projectId is required');
+    }
+
+    const project = await this.projectsRepo.findOne({
+      where: { id: normalizedProjectId, qhseManagerId: reqUser.mongoId },
+    });
+
+    if (!project) {
+      throw new ForbiddenException('You can only analyze assigned sites');
+    }
+
+    const reports = await this.qhseReportsRepo.find({
+      where: {
+        projectId: normalizedProjectId,
+        assignedQhseManagerId: reqUser.mongoId,
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    const attachmentUrls = Array.from(
+      new Set(
+        reports.flatMap((report) =>
+          Array.isArray(report.attachments)
+            ? report.attachments.filter((attachment) => this.isImageAttachment(attachment))
+            : [],
+        ),
+      ),
+    );
+
+    if (!attachmentUrls.length) {
+      throw new BadRequestException('No site images are available for this project');
+    }
+
+    const analyses: Array<{ attachmentUrl: string; analysis: PpeAnalysisResult }> = [];
+    for (const attachmentUrl of attachmentUrls) {
+      const analysis = await this.runAiAnalysisForAttachment(attachmentUrl);
+      analyses.push({
+        attachmentUrl,
+        analysis,
+      });
+    }
+
+    const totals = analyses.reduce(
+      (accumulator, item) => ({
+        persons: accumulator.persons + Number(item.analysis.persons || 0),
+        helmets: accumulator.helmets + Number(item.analysis.helmets || 0),
+        vests: accumulator.vests + Number(item.analysis.vests || 0),
+        no_helmet: accumulator.no_helmet + Number(item.analysis.no_helmet || 0),
+        no_vest: accumulator.no_vest + Number(item.analysis.no_vest || 0),
+        ppe_compliance_percent:
+          accumulator.ppe_compliance_percent + Number(item.analysis.ppe_compliance_percent || 0),
+      }),
+      {
+        persons: 0,
+        helmets: 0,
+        vests: 0,
+        no_helmet: 0,
+        no_vest: 0,
+        ppe_compliance_percent: 0,
+      },
+    );
+
+    const imageCount = analyses.length;
+
+    return {
+      project: {
+        id: project.id,
+        name: project.name,
+        code: project.code,
+      },
+      imageCount,
+      analysis: {
+        persons: Number((totals.persons / imageCount).toFixed(2)),
+        helmets: Number((totals.helmets / imageCount).toFixed(2)),
+        vests: Number((totals.vests / imageCount).toFixed(2)),
+        no_helmet: Number((totals.no_helmet / imageCount).toFixed(2)),
+        no_vest: Number((totals.no_vest / imageCount).toFixed(2)),
+        ppe_compliance_percent: Number((totals.ppe_compliance_percent / imageCount).toFixed(2)),
+      },
+      analyzedImages: analyses.map((item) => item.attachmentUrl),
+    };
+  }
+
+  private buildSafetyAssessment(complianceScore: number) {
+    if (complianceScore >= 85) {
+      return {
+        riskLevel: 'LOW' as const,
+        summary:
+          'The site shows strong PPE compliance overall. Workers appear to follow helmet and safety vest requirements in most analyzed images.',
+        recommendations: [
+          'Maintain current PPE supervision and continue routine spot checks.',
+          'Keep helmet and vest stock available at site entry points.',
+          'Repeat AI-assisted safety reviews regularly to confirm sustained compliance.',
+        ],
+      };
+    }
+
+    if (complianceScore >= 60) {
+      return {
+        riskLevel: 'MEDIUM' as const,
+        summary:
+          'The site shows partial PPE compliance. Helmet and safety vest usage is inconsistent across the analyzed images and needs corrective follow-up.',
+        recommendations: [
+          'Remind all crews of mandatory helmet and vest requirements before each shift.',
+          'Increase on-site supervision in high-traffic and active work zones.',
+          'Schedule a short follow-up inspection after corrective reminders are issued.',
+        ],
+      };
+    }
+
+    return {
+      riskLevel: 'HIGH' as const,
+      summary:
+        'The site shows low PPE compliance. Multiple workers may be operating without consistent helmet or vest usage, creating an elevated safety risk.',
+      recommendations: [
+        'Launch an immediate corrective action on PPE enforcement for all active crews.',
+        'Restrict unsafe work areas until helmet and vest compliance is restored.',
+        'Run a follow-up QHSE inspection and retrain workers on mandatory PPE rules.',
+      ],
+    };
+  }
+
+  async previewQhseSiteSafetyReport(reqUser: any, projectId: string) {
+    const averageResult = await this.analyzeQhseSiteAverage(reqUser, projectId);
+    const project = await this.projectsRepo.findOne({
+      where: { id: averageResult.project.id, qhseManagerId: reqUser.mongoId },
+    });
+
+    if (!project) {
+      throw new ForbiddenException('You can only send reports for assigned sites');
+    }
+
+    if (!project.directorId) {
+      throw new BadRequestException('This site has no assigned director');
+    }
+
+    const director = await this.usersService.getUserById(project.directorId);
+    if (!director?.email) {
+      throw new BadRequestException('Director email is not available for this site');
+    }
+
+    const directorName =
+      `${director.firstName || ''} ${director.lastName || ''}`.trim() ||
+      director.username ||
+      director.email;
+
+    const complianceScore = Number(averageResult.analysis.ppe_compliance_percent.toFixed(2));
+    const assessment = this.buildSafetyAssessment(complianceScore);
+
+    return {
+      director: {
+        id: project.directorId,
+        name: directorName,
+        email: director.email,
+      },
+      project: averageResult.project,
+      report: {
+        complianceScore,
+        imageCount: averageResult.imageCount,
+        riskLevel: assessment.riskLevel,
+        summary: assessment.summary,
+        recommendations: assessment.recommendations,
+      },
+    };
+  }
+
+  async sendQhseSiteSafetyReport(reqUser: any, projectId: string, reqMeta: any) {
+    const preview = await this.previewQhseSiteSafetyReport(reqUser, projectId);
+
+    const project = await this.projectsRepo.findOne({
+      where: { id: preview.project.id, qhseManagerId: reqUser.mongoId },
+    });
+    if (!project) {
+      throw new ForbiddenException('You can only send reports for assigned sites');
+    }
+
+    await this.emailService.sendSiteSafetyReportToDirector(preview.director.email, {
+      directorName: preview.director.name,
+      siteName: project.name,
+      siteCode: project.code,
+      siteAddress: project.siteAddress || '',
+      complianceScore: preview.report.complianceScore,
+      imageCount: preview.report.imageCount,
+      riskLevel: preview.report.riskLevel,
+      summary: preview.report.summary,
+      recommendations: preview.report.recommendations,
+    });
+
+    await this.activityLogsService.logActivity({
+      userId: reqUser.sub,
+      username: reqUser.preferred_username || reqUser.username || reqUser.email,
+      action: 'QHSE_SITE_SAFETY_REPORT_EMAILED',
+      description: `QHSE emailed AI safety report for site ${project.name} to director`,
+      details: {
+        projectId: project.id,
+        directorId: project.directorId,
+        directorEmail: preview.director.email,
+        complianceScore: preview.report.complianceScore,
+        imageCount: preview.report.imageCount,
+        riskLevel: preview.report.riskLevel,
+      },
+      ipAddress: reqMeta.ipAddress,
+      userAgent: reqMeta.userAgent,
+      performedBy: reqUser.sub,
+      status: 'SUCCESS',
+    });
+
+    return {
+      success: true,
+      director: preview.director,
+      project: preview.project,
+      report: preview.report,
+      message: 'Safety report sent to director successfully',
+    };
   }
 
   async getQhseReportQueue(reqUser: any) {
