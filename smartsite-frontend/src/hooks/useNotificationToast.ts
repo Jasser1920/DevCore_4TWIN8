@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getMyNotifications, type NotificationItem } from '../lib/api'
 import { getAccessToken, getBusinessRoles, getRolesFromToken } from '../lib/auth'
@@ -7,7 +7,7 @@ import { type AppRole } from '../lib/notificationRoutes'
 export function useNotificationToast(onNewNotification: (item: NotificationItem, role: AppRole) => void) {
   
   const roles = getBusinessRoles(getRolesFromToken(getAccessToken()))
-  const role = (roles.find((value) => ['CLIENT', 'SUPER_ADMIN', 'DIRECTOR', 'PROJECT_MANAGER'].includes(value)) || 'CLIENT') as AppRole
+  const role = (roles.find((value) => ['CLIENT', 'SUPER_ADMIN', 'DIRECTOR', 'PROJECT_MANAGER', 'QHSE_MANAGER'].includes(value)) || 'CLIENT') as AppRole
   const lastNotificationId = useRef<string | null>(null)
 
   // Poll notifications every 10 seconds

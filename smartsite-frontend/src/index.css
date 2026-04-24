@@ -492,3 +492,73 @@ select {
 .a11y-focus-indicators a:not(.app-button) {
   text-decoration: underline !important;
 }
+/* ============================================
+   MAP ENHANCEMENTS
+   ============================================ */
+
+@keyframes map-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 15px rgba(14, 165, 233, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0);
+  }
+}
+
+.map-marker-pulse {
+  background: #0ea5e9;
+  border-radius: 50%;
+  height: 12px;
+  width: 12px;
+  position: relative;
+}
+
+.map-marker-pulse::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  border-radius: 50%;
+  animation: map-pulse 2s infinite;
+  box-shadow: 0 0 0 rgba(14, 165, 233, 0.4);
+}
+
+.map-glass-control {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.leaflet-container {
+  cursor: crosshair !important;
+}
+
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+}
+
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: none !important;
+  color: #075B7A !important;
+}
+
+.leaflet-control-zoom-in:hover,
+.leaflet-control-zoom-out:hover {
+  background: #fff !important;
+  color: #148ABB !important;
+}

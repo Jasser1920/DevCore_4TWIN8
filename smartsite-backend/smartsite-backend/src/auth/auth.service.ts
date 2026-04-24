@@ -438,7 +438,15 @@ export class AuthService {
     }
   }
 
-async createKeycloakUser(userData: any, adminToken: string) {
+  async getKeycloakUserByUsername(username: string, adminToken: string) {
+    const url = `${this.config.get<string>('KEYCLOAK_URL')}/admin/realms/${this.config.get<string>('REALM')}/users?username=${username}`;
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    return response.data[0] || null;
+  }
+
+  async createKeycloakUser(userData: any, adminToken: string) {
   const url = `${this.config.get<string>('KEYCLOAK_URL')}/admin/realms/${this.config.get<string>('REALM')}/users`;
 
   const response = await axios.post(

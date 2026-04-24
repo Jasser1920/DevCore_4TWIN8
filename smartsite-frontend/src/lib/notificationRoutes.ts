@@ -1,6 +1,6 @@
 import type { NotificationItem } from './api'
 
-export type AppRole = 'SUPER_ADMIN' | 'DIRECTOR' | 'PROJECT_MANAGER' | 'CLIENT'
+export type AppRole = 'SUPER_ADMIN' | 'DIRECTOR' | 'PROJECT_MANAGER' | 'CLIENT' | 'QHSE_MANAGER'
 
 type RouteTarget = {
   path: string
@@ -17,10 +17,11 @@ function withQuery(path: string, params: Record<string, string | undefined>) {
   return queryString ? `${path}?${queryString}` : path
 }
 
-function defaultRouteByRole(role: AppRole): RouteTarget {
+export function defaultRouteByRole(role: AppRole): RouteTarget {
   if (role === 'DIRECTOR') return { path: '/director?view=notifications' }
   if (role === 'PROJECT_MANAGER') return { path: '/project-manager?view=notifications' }
   if (role === 'CLIENT') return { path: '/client?view=notifications' }
+  if (role === 'QHSE_MANAGER') return { path: '/qhse-manager?view=notifications' }
   return { path: '/superadmin?view=notifications' }
 }
 

@@ -111,6 +111,7 @@ export default function ProjectManager() {
     plannedDate: '',
     description: '',
     evidenceSummary: '',
+    predecessorId: '',
   })
   const [qhseReportSummary, setQhseReportSummary] = useState('')
   const [qhseReportFiles, setQhseReportFiles] = useState<File[]>([])
@@ -203,6 +204,7 @@ export default function ProjectManager() {
       plannedDate: '',
       description: '',
       evidenceSummary: '',
+      predecessorId: '',
     })
     setQhseReportSummary('')
     setQhseReportFiles([])
@@ -454,6 +456,7 @@ export default function ProjectManager() {
         name: milestoneForm.name.trim(),
         plannedDate: milestoneForm.plannedDate,
         description: milestoneForm.description.trim() || undefined,
+        predecessorId: milestoneForm.predecessorId || undefined,
         evidenceAttachments,
       })
     },
@@ -1176,6 +1179,21 @@ export default function ProjectManager() {
                     onChange={(event) => setMilestoneForm((prev) => ({ ...prev, description: event.target.value }))}
                     style={{ ...inputStyle, minHeight: '70px' }}
                   />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Depends On (Predecessor)</label>
+                    <select
+                      value={milestoneForm.predecessorId}
+                      onChange={(event) => setMilestoneForm((prev) => ({ ...prev, predecessorId: event.target.value }))}
+                      style={inputStyle}
+                    >
+                      <option value="">No Predecessor (Starting Task)</option>
+                      {(milestonesQuery.data || []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({new Date(m.plannedDate).toLocaleDateString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <textarea
                     placeholder="Evidence summary used during submit/resubmit"
                     value={milestoneForm.evidenceSummary}
