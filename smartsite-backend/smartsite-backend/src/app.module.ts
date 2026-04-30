@@ -19,6 +19,7 @@ import { QhseSiteReport } from './projects/qhse-site-report.entity';
 import { QhseCorrectiveAction } from './projects/qhse-corrective-action.entity';
 import { NotificationsModule, Notification } from './notifications';
 import { ApiUsageService } from './common/api-usage.service';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { ApiUsageService } from './common/api-usage.service';
     StrategicVisionModule,
     ProjectsModule,
     NotificationsModule,
+    ChatModule,
   ],
   providers: [InitService, ApiUsageService],
 })

@@ -16,9 +16,14 @@ import NotificationToast from './components/NotificationToast'
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotificationToast } from './hooks/useNotificationToast'
+<<<<<<< Updated upstream
 import { resolveNotificationRoute, type AppRole } from './lib/notificationRoutes'
 
 
+=======
+import { resolveNotificationRoute, defaultRouteByRole, type AppRole } from './lib/notificationRoutes'
+import SiteBrainChatbot from './components/SiteBrainChatbot'
+>>>>>>> Stashed changes
 
 function App() {
   const [toast, setToast] = useState<{
@@ -50,6 +55,7 @@ function App() {
           onClose={() => setToast(null)}
         />
       )}
+      <SiteBrainChatbot />
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />

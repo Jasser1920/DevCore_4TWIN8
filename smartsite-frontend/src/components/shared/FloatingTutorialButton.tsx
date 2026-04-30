@@ -1,4 +1,4 @@
-import { Lightbulb } from 'lucide-react'
+import { HelpCircle } from 'lucide-react'
 
 type FloatingTutorialButtonProps = {
   onClick: () => void
@@ -19,8 +19,8 @@ export default function FloatingTutorialButton({
       aria-label={title}
       style={{
         position: 'fixed',
-        right: '20px',
-        bottom: '20px',
+        right: '90px',
+        bottom: '24px',
         width: '56px',
         height: '56px',
         borderRadius: '999px',
@@ -37,7 +37,7 @@ export default function FloatingTutorialButton({
       }}
       data-tour="tutorial-floating-lamp"
     >
-      <Lightbulb size={22} />
+      <HelpCircle size={22} />
     </button>
   )
 }
