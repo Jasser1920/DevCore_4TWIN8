@@ -219,6 +219,13 @@ export async function createProject(data: {
   })
 }
 
+export async function generateAiProjectDescription(projectName: string) {
+  return apiFetch<{ description: string }>('/projects/ai/generate-project-description', {
+    method: 'POST',
+    body: JSON.stringify({ projectName }),
+  })
+}
+
 export async function updateProject(projectId: string, data: {
   name?: string
   description?: string
@@ -427,6 +434,20 @@ export async function createMilestone(projectId: string, data: {
   })
 }
 
+export async function generateAiMilestoneDescription(projectId: string, milestoneName: string) {
+  return apiFetch<{ description: string }>(`/projects/${projectId}/ai/generate-milestone-description`, {
+    method: 'POST',
+    body: JSON.stringify({ milestoneName }),
+  })
+}
+
+export async function generateAiMilestoneEvidenceSummary(projectId: string, milestoneName: string) {
+  return apiFetch<{ summary: string }>(`/projects/${projectId}/ai/generate-milestone-evidence-summary`, {
+    method: 'POST',
+    body: JSON.stringify({ milestoneName }),
+  })
+}
+
 export async function getProjectPlanningAnalysis(projectId: string) {
   return apiFetch<{
     projectId: string
@@ -572,6 +593,21 @@ export async function submitQhseSiteReport(projectId: string, data: { summary: s
 
 export async function getQhseAssignedSites() {
   return apiFetch<ProjectItem[]>('/projects/qhse/assigned-sites', {
+    method: 'GET',
+  })
+}
+
+export async function getQhseDashboardStats() {
+  return apiFetch<{
+    metrics: {
+      assignedSitesCount: number;
+      pendingReportsCount: number;
+      openActionsCount: number;
+      complianceAverage: number;
+    };
+    monthlyStats: Array<{ name: string; count: number }>;
+    recentActions: any[];
+  }>('/projects/qhse/dashboard-stats', {
     method: 'GET',
   })
 }

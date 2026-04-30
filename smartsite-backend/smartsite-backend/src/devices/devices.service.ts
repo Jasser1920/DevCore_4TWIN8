@@ -87,7 +87,7 @@ export class DevicesService {
     return this.deviceModel.findOneAndUpdate(
       { userId, deviceId },
       { deviceName },
-      { new: true },
+      { returnDocument: 'after' },
     );
   }
 

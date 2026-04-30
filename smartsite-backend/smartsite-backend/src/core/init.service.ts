@@ -159,28 +159,6 @@ export class InitService implements OnModuleInit {
         adminToken,
       );
     }
-          username: userConfig.username,
-          email: userConfig.email,
-          firstName: userConfig.firstName,
-          lastName: userConfig.lastName,
-          enabled: true,
-        },
-        adminToken,
-      );
-      wasCreatedInKeycloak = true;
-    } else {
-      await this.authService.updateKeycloakUser(
-        keycloakUser.id,
-        {
-          username: userConfig.username,
-          email: userConfig.email,
-          firstName: userConfig.firstName,
-          lastName: userConfig.lastName,
-          enabled: true,
-        },
-        adminToken,
-      );
-    }
 
     if (!keycloakUser) {
       throw new Error(`Unable to resolve Keycloak user for ${userConfig.username}`);

@@ -17,6 +17,11 @@ export class UpdateProjectDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(40)
+  code?: string;
+
+  @IsString()
+  @IsOptional()
   description?: string;
 
   @IsNumber()

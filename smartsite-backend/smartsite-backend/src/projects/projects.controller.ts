@@ -167,6 +167,38 @@ async getRevenueByMonth(@Req() req: any) {
     return this.projectsService.submitProject(id, req.user, this.requestMeta(req), true);
   }
 
+  @Post('ai/generate-project-description')
+  async generateAiProjectDescription(@Req() req: any, @Body() body: { projectName: string }) {
+    if (req.user.role !== 'PROJECT_MANAGER') {
+      throw new ForbiddenException('Only PROJECT_MANAGER can generate AI descriptions');
+    }
+    return this.projectsService.generateAiProjectDescription(body.projectName);
+  }
+
+  @Post(':id/ai/generate-milestone-description')
+  async generateAiMilestoneDescription(
+    @Req() req: any, 
+    @Param('id') id: string, 
+    @Body() body: { milestoneName: string }
+  ) {
+    if (req.user.role !== 'PROJECT_MANAGER') {
+      throw new ForbiddenException('Only PROJECT_MANAGER can generate AI descriptions');
+    }
+    return this.projectsService.generateAiMilestoneDescription(id, req.user, body.milestoneName);
+  }
+
+  @Post(':id/ai/generate-milestone-evidence-summary')
+  async generateAiMilestoneEvidenceSummary(
+    @Req() req: any, 
+    @Param('id') id: string, 
+    @Body() body: { milestoneName: string }
+  ) {
+    if (req.user.role !== 'PROJECT_MANAGER') {
+      throw new ForbiddenException('Only PROJECT_MANAGER can generate AI evidence summaries');
+    }
+    return this.projectsService.generateAiMilestoneEvidenceSummary(id, req.user, body.milestoneName);
+  }
+
   @Get('my-projects')
   async getMyProjects(@Req() req: any) {
     if (req.user.role !== 'PROJECT_MANAGER') {
@@ -418,6 +450,15 @@ async getRevenueByMonth(@Req() req: any) {
     }
 
     return this.projectsService.getQhseAssignedSites(req.user);
+  }
+
+  @Get('qhse/dashboard-stats')
+  async getQhseDashboardStats(@Req() req: any) {
+    if (req.user.role !== 'QHSE_MANAGER') {
+      throw new ForbiddenException('Only QHSE_MANAGER can access dashboard stats');
+    }
+
+    return this.projectsService.getQhseDashboardStats(req.user);
   }
 
   @Post('qhse/analyze-image')

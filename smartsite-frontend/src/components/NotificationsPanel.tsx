@@ -92,7 +92,7 @@ export default function NotificationsPanel() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const roles = getBusinessRoles(getRolesFromToken(getAccessToken()))
-  const role = (roles.find((value) => ['CLIENT', 'SUPER_ADMIN', 'DIRECTOR', 'PROJECT_MANAGER'].includes(value)) ||
+  const role = (roles.find((value) => ['CLIENT', 'SUPER_ADMIN', 'DIRECTOR', 'PROJECT_MANAGER', 'QHSE_MANAGER'].includes(value)) ||
     'CLIENT') as AppRole
 
   const notificationsQuery = useQuery({

@@ -19,6 +19,9 @@ import {
   submitProject,
   uploadMilestoneAttachments,
   updateProject,
+  generateAiProjectDescription,
+  generateAiMilestoneDescription,
+  generateAiMilestoneEvidenceSummary,
   type MilestoneItem,
   type ProjectItem,
 } from '../lib/api'
@@ -36,6 +39,7 @@ import NotificationsPanel from '../components/NotificationsPanel'
 import ProjectLocationPickerMap from '../components/shared/ProjectLocationPickerMap'
 import GuidedTourOverlay from '../components/shared/GuidedTourOverlay'
 import FloatingTutorialButton from '../components/shared/FloatingTutorialButton'
+import { BrainCircuit } from 'lucide-react'
 
 const MAX_PM_ONGOING_PROJECTS = 3
 const MAX_QHSE_REPORT_IMAGES = 10
@@ -761,6 +765,40 @@ export default function ProjectManager() {
               style={getFieldStyle('code')}
             />
             {renderFieldError('code')}
+          <div style={{ display: 'grid', gap: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Description</span>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!form.name.trim()) {
+                    setFieldErrors((prev) => ({ ...prev, description: 'Please enter a project name first.' }))
+                    return
+                  }
+                  try {
+                    const res = await generateAiProjectDescription(form.name)
+                    applyFieldChange('description', res.description)
+                    setFieldErrors((prev) => ({ ...prev, description: '' }))
+                  } catch (e: any) {
+                    setFieldErrors((prev) => ({ ...prev, description: 'AI generation failed: ' + e.message }))
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '12px',
+                  color: '#0e7490',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontWeight: 600
+                }}
+              >
+                <BrainCircuit size={14} /> AI Generate
+              </button>
+            </div>
             <textarea
               placeholder="Description"
               value={form.description}
@@ -769,6 +807,10 @@ export default function ProjectManager() {
               onBlur={() => handleFieldBlur('description')}
               style={{ ...getFieldStyle('description'), minHeight: '90px' }}
             />
+            {fieldErrors.description && (
+              <span style={{ fontSize: '12px', color: '#b91c1c' }}>{fieldErrors.description}</span>
+            )}
+          </div>
             {renderFieldError('description')}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px' }}>
               <input
@@ -1173,12 +1215,43 @@ export default function ProjectManager() {
                     onChange={(event) => setMilestoneForm((prev) => ({ ...prev, plannedDate: event.target.value }))}
                     style={inputStyle}
                   />
-                  <textarea
-                    placeholder="Milestone description"
-                    value={milestoneForm.description}
-                    onChange={(event) => setMilestoneForm((prev) => ({ ...prev, description: event.target.value }))}
-                    style={{ ...inputStyle, minHeight: '70px' }}
-                  />
+                  <div style={{ display: 'grid', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Milestone Description</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!milestoneForm.name.trim() || !selectedProjectId) return
+                          try {
+                            const res = await generateAiMilestoneDescription(selectedProjectId, milestoneForm.name)
+                            setMilestoneForm((prev) => ({ ...prev, description: res.description }))
+                          } catch (e) {
+                            // ignore or show toast
+                          }
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '12px',
+                          color: '#0e7490',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: 0,
+                          fontWeight: 600
+                        }}
+                      >
+                        <BrainCircuit size={14} /> AI Generate
+                      </button>
+                    </div>
+                    <textarea
+                      placeholder="Milestone description"
+                      value={milestoneForm.description}
+                      onChange={(event) => setMilestoneForm((prev) => ({ ...prev, description: event.target.value }))}
+                      style={{ ...inputStyle, minHeight: '70px' }}
+                    />
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Depends On (Predecessor)</label>
                     <select
@@ -1194,12 +1267,43 @@ export default function ProjectManager() {
                       ))}
                     </select>
                   </div>
-                  <textarea
-                    placeholder="Evidence summary used during submit/resubmit"
-                    value={milestoneForm.evidenceSummary}
-                    onChange={(event) => setMilestoneForm((prev) => ({ ...prev, evidenceSummary: event.target.value }))}
-                    style={{ ...inputStyle, minHeight: '70px' }}
-                  />
+                  <div style={{ display: 'grid', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Evidence Summary</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!milestoneForm.name.trim() || !selectedProjectId) return
+                          try {
+                            const res = await generateAiMilestoneEvidenceSummary(selectedProjectId, milestoneForm.name)
+                            setMilestoneForm((prev) => ({ ...prev, evidenceSummary: res.summary }))
+                          } catch (e) {
+                            // ignore or show toast
+                          }
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '12px',
+                          color: '#0e7490',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: 0,
+                          fontWeight: 600
+                        }}
+                      >
+                        <BrainCircuit size={14} /> AI Generate
+                      </button>
+                    </div>
+                    <textarea
+                      placeholder="Evidence summary used during submit/resubmit"
+                      value={milestoneForm.evidenceSummary}
+                      onChange={(event) => setMilestoneForm((prev) => ({ ...prev, evidenceSummary: event.target.value }))}
+                      style={{ ...inputStyle, minHeight: '70px' }}
+                    />
+                  </div>
                   <div
                     onDragEnter={(event) => {
                       event.preventDefault()

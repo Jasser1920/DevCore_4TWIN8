@@ -31,12 +31,12 @@ export class UsersService {
   }
 
   async updateUser(id: string, updateData: any) {
-    return this.userModel.findByIdAndUpdate(id, updateData, { new: true });
+    return this.userModel.findByIdAndUpdate(id, updateData, { returnDocument: 'after' });
   }
 
   async updateUserById(id: string, updateData: any) {
     return this.userModel.findOneAndUpdate({ _id: id }, updateData, {
-      new: true,
+      returnDocument: 'after',
     });
   }
 
@@ -122,7 +122,7 @@ export class UsersService {
     return this.userModel.findOneAndUpdate(
       { email },
       { lastVerificationEmailSentAt: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 
@@ -140,7 +140,7 @@ export class UsersService {
         deletionScheduledFor,
         deletionReason: reason || null,
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 
@@ -155,7 +155,7 @@ export class UsersService {
         deletionScheduledFor: null,
         deletionReason: null,
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 

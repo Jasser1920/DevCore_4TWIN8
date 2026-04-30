@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type NotificationRole = 'SUPER_ADMIN' | 'DIRECTOR' | 'PROJECT_MANAGER' | 'CLIENT';
+export type NotificationRole = 'SUPER_ADMIN' | 'DIRECTOR' | 'PROJECT_MANAGER' | 'CLIENT' | 'QHSE_MANAGER';
 
 @Entity('notifications')
 export class Notification {

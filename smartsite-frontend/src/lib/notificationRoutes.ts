@@ -135,6 +135,21 @@ export function resolveNotificationRoute(
 
       return { path: '/superadmin?view=activity-logs' }
 
+    case 'PROJECT_QHSE_ASSIGNED':
+      if (role === 'DIRECTOR') {
+        return {
+          path: withQuery('/director', {
+            view: 'project-overview',
+            projectId,
+          }),
+        }
+      }
+      if (role === 'QHSE_MANAGER') return { path: '/qhse-manager?view=assigned-sites' }
+      return { path: '/superadmin?view=companies' }
+
+    case 'QHSE_REPORT_SUBMITTED_BY_PM':
+      return { path: '/qhse-manager?view=reports-queue' }
+
     default:
       return defaultRouteByRole(role)
   }

@@ -47,13 +47,36 @@ export default function ConstructionSitesMapView() {
   const sites = sitesQuery.data?.data || []
   const pmOptions = sitesQuery.data?.filters.projectManagers || []
 
-  const mapCenter = useMemo<[number, number]>(() => {
-    if (!sites.length) return defaultCenter
-
-    const latAvg = sites.reduce((sum, site) => sum + site.latitude, 0) / sites.length
-    const lngAvg = sites.reduce((sum, site) => sum + site.longitude, 0) / sites.length
-    return [Number(latAvg.toFixed(7)), Number(lngAvg.toFixed(7))]
+  const jitteredSites = useMemo(() => {
+    const coordinateMap = new Map<string, number>()
+    const JITTER_AMOUNT = 0.0002 // Slightly larger for the main map
+    
+    return sites.map((site) => {
+      let lat = Number(site.latitude) || 36.8065
+      let lng = Number(site.longitude) || 10.1815
+      
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`
+      const count = coordinateMap.get(key) || 0
+      coordinateMap.set(key, count + 1)
+      
+      if (count > 0) {
+        const angle = count * 0.8
+        const radius = JITTER_AMOUNT * (1 + count * 0.2)
+        lat += Math.cos(angle) * radius
+        lng += Math.sin(angle) * radius
+      }
+      
+      return { ...site, latitude: lat, longitude: lng }
+    })
   }, [sites])
+
+  const mapCenter = useMemo<[number, number]>(() => {
+    const defaultCenter: [number, number] = [36.8065, 10.1815];
+    if (!jitteredSites.length) return defaultCenter;
+    const latAvg = jitteredSites.reduce((sum: number, s: any) => sum + (s.latitude || 0), 0) / jitteredSites.length;
+    const lngAvg = jitteredSites.reduce((sum: number, s: any) => sum + (s.longitude || 0), 0) / jitteredSites.length;
+    return [Number(latAvg.toFixed(7)), Number(lngAvg.toFixed(7))];
+  }, [jitteredSites]);
 
   return (
     <div style={{ display: 'grid', gap: '18px' }}>
@@ -129,7 +152,7 @@ export default function ConstructionSitesMapView() {
             url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
           />
 
-          {sites.map((site) => (
+          {jitteredSites.map((site) => (
             <CircleMarker
               key={site.id}
               center={[site.latitude, site.longitude]}

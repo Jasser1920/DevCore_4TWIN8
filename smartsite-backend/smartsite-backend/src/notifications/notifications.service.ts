@@ -25,6 +25,7 @@ export class NotificationsService {
     'DIRECTOR',
     'PROJECT_MANAGER',
     'CLIENT',
+    'QHSE_MANAGER',
   ];
 
   private readonly recipientsByAction: Record<string, NotificationRole[]> = {
@@ -38,6 +39,8 @@ export class NotificationsService {
 
     PM_ASSIGNED: ['DIRECTOR', 'PROJECT_MANAGER', 'SUPER_ADMIN'],
     PM_UNASSIGNED: ['DIRECTOR', 'PROJECT_MANAGER', 'SUPER_ADMIN'],
+    PROJECT_QHSE_ASSIGNED: ['DIRECTOR', 'QHSE_MANAGER', 'SUPER_ADMIN'],
+    QHSE_REPORT_SUBMITTED_BY_PM: ['QHSE_MANAGER'],
     PROJECT_SUBMITTED: ['DIRECTOR'],
     PROJECT_RESUBMITTED: ['DIRECTOR'],
     STRATEGIC_VISION_CREATED: ['DIRECTOR'],
@@ -69,6 +72,8 @@ export class NotificationsService {
 
     PM_ASSIGNED: 'Project Manager Assigned',
     PM_UNASSIGNED: 'Project Manager Unassigned',
+    PROJECT_QHSE_ASSIGNED: 'QHSE Manager Assigned',
+    QHSE_REPORT_SUBMITTED_BY_PM: 'New QHSE Report Submitted',
     PROJECT_SUBMITTED: 'Project Submitted For Validation',
     PROJECT_RESUBMITTED: 'Project Resubmitted For Validation',
     STRATEGIC_VISION_CREATED: 'Strategic Vision Submitted',
@@ -278,6 +283,41 @@ export class NotificationsService {
       roleTargets.DIRECTOR = company?.managerUserId ? [company.managerUserId] : [];
       roleTargets.PROJECT_MANAGER = pmTarget ? [pmTarget] : [];
       roleTargets.SUPER_ADMIN = company?.ownerUserId ? [company.ownerUserId] : [];
+      return roleTargets;
+    }
+
+    if (action === 'PROJECT_QHSE_ASSIGNED') {
+      const projectId = details.projectId as string | undefined;
+      if (!projectId) return roleTargets;
+      
+      const project = await this.projectsRepository.findOne({ 
+        where: { id: projectId },
+        relations: ['company']
+      });
+      if (!project) return roleTargets;
+
+      const qhseTarget = details.qhseManagerId as string | undefined;
+      
+      const directorId = (project as any).directorId || project.company?.managerUserId;
+      if (directorId) {
+        roleTargets.DIRECTOR = [directorId];
+      }
+      
+      if (qhseTarget) {
+        roleTargets.QHSE_MANAGER = [qhseTarget];
+      }
+      
+      if (project.company?.ownerUserId) {
+        roleTargets.SUPER_ADMIN = [project.company.ownerUserId];
+      }
+      return roleTargets;
+    }
+
+    if (action === 'QHSE_REPORT_SUBMITTED_BY_PM') {
+      const qhseTarget = details.assignedQhseManagerId as string | undefined;
+      if (qhseTarget) {
+        roleTargets.QHSE_MANAGER = [qhseTarget];
+      }
       return roleTargets;
     }
 

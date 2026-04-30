@@ -60,6 +60,9 @@ export const ActivityLogSchema = new Schema({
       'QHSE_CORRECTIVE_ACTION_UPDATED',
       'QHSE_ESCALATION_POLICY_EXECUTED',
       'QHSE_SITE_SAFETY_REPORT_EMAILED',
+      'VERIFICATION_EMAIL_RESENT',
+      'DELETION_REQUESTED',
+      'DELETION_CANCELLED',
     ],
     required: true,
     index: true

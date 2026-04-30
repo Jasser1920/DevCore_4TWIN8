@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, AlertCircle } from 'lucide-react'
 
 // IMPORTANT: Replace this placeholder with your real API key from OpenWeatherMap
-const OPENWEATHER_API_KEY = ''; // Removed for security reasons
+const OPENWEATHER_API_KEY = '' // Removed for security reasons
 
 interface SiteWeatherInfoProps {
   latitude: number
