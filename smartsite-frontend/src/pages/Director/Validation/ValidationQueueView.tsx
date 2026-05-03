@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getDirectorValidationQueue, validateProject, type ProjectItem } from '../../../lib/api'
 import { useResponsive } from '../../../hooks/useResponsive'
+import ProtectedProjectImage from '../../../components/shared/ProtectedProjectImage'
 
 type DecisionState = {
   project: ProjectItem
@@ -105,6 +106,22 @@ export default function ValidationQueueView() {
 
               {project.description && (
                 <p style={{ margin: '10px 0', fontSize: '14px', color: '#4b5563' }}>{project.description}</p>
+              )}
+
+              {project.prototypeImageUrl && (
+                <ProtectedProjectImage
+                  attachmentUrl={project.prototypeImageUrl}
+                  alt={`${project.name} prototype`}
+                  style={{
+                    width: '100%',
+                    maxWidth: '420px',
+                    height: '180px',
+                    objectFit: 'cover',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb',
+                    marginTop: '10px',
+                  }}
+                />
               )}
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>

@@ -44,6 +44,9 @@ export class Project {
   @Column({ type: 'text', nullable: true })
   description: string;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  prototypeImageUrl: string;
+
   @Column({ type: 'varchar', length: 255 })
   projectManagerId: string;
 

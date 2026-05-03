@@ -22,7 +22,7 @@ import { ValidateProjectDto } from './dto/validate-project.dto';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { UsersService } from '../users/users.service';
 import { StrategicVision, StrategicVisionStatus } from '../strategic-vision/strategic-vision.entity';
-import { Milestone, MilestoneStatus } from './milestone.entity';
+import { Milestone, MilestoneStatus, type MilestoneStageAnalysis } from './milestone.entity';
 import { CreateMilestoneDto } from './dto/create-milestone.dto';
 import { SubmitMilestoneDto } from './dto/submit-milestone.dto';
 import { ClientValidateMilestoneDto } from './dto/client-validate-milestone.dto';
@@ -47,6 +47,7 @@ type ProjectOverviewSortBy = 'lastUpdatedAt' | 'risk' | 'budgetConsumptionPercen
 type SortOrder = 'asc' | 'desc';
 
 const MAX_PM_ONGOING_PROJECTS = 3;
+const STAGE_ANALYSIS_TIMEOUT_MS = 15000;
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const UPLOADS_DIR = join(process.cwd(), 'uploads', 'milestone-evidence');
 type PpeAnalysisResult = {
@@ -281,6 +282,7 @@ async getGrowth(): Promise<number> {
         clientName: clientProfile?.displayName || null,
         clientEmail: clientProfile?.email || null,
         qhseManagerId: project.qhseManagerId || null,
+        prototypeImageUrl: project.prototypeImageUrl || null,
         budgetConsumptionPercent,
         progressPercent,
         risk,
@@ -354,12 +356,152 @@ async getGrowth(): Promise<number> {
     );
   }
 
+  private getAttachmentFileName(attachmentUrl: string) {
+    return attachmentUrl.split('/').filter(Boolean).pop() || attachmentUrl;
+  }
+
   private inferAttachmentContentType(path: string) {
     const normalizedPath = path.toLowerCase();
     if (normalizedPath.endsWith('.png')) return 'image/png';
     if (normalizedPath.endsWith('.gif')) return 'image/gif';
     if (normalizedPath.endsWith('.webp')) return 'image/webp';
     return 'image/jpeg';
+  }
+
+  private getMilestoneImageAttachments(milestone: Milestone) {
+    return this.normalizeEvidenceAttachments(milestone.evidenceAttachments)
+      .filter((attachmentUrl) =>
+        attachmentUrl.startsWith('/projects/uploads/') && this.isImageAttachment(attachmentUrl),
+      );
+  }
+
+  private areStageAnalysesCurrent(milestone: Milestone) {
+    const imageAttachments = this.getMilestoneImageAttachments(milestone);
+    const analyses = Array.isArray(milestone.stageAnalyses) ? milestone.stageAnalyses : [];
+
+    if (imageAttachments.length !== analyses.length) {
+      return false;
+    }
+
+    if (analyses.some((analysis) => !!analysis.error)) {
+      return false;
+    }
+
+    const analyzedAttachments = new Set(
+      analyses.map((analysis) => analysis.attachmentUrl).filter(Boolean),
+    );
+
+    return imageAttachments.every((attachmentUrl) => analyzedAttachments.has(attachmentUrl));
+  }
+
+  private async runStageAnalysisForAttachment(attachmentUrl: string): Promise<MilestoneStageAnalysis> {
+    const filename = this.getAttachmentFileName(attachmentUrl);
+    const filePath = join(UPLOADS_DIR, filename);
+
+    let imageBuffer: Buffer;
+    try {
+      imageBuffer = await fs.readFile(filePath);
+    } catch {
+      throw new NotFoundException('Attachment file not found');
+    }
+
+    const aiBaseUrl = (
+      this.configService.get<string>('SMARTSITE_PROGRESS_AI_URL') ||
+      process.env.SMARTSITE_PROGRESS_AI_URL ||
+      'http://127.0.0.1:8001'
+    ).replace(/\/+$/, '');
+
+    const formData = new FormData();
+    formData.append(
+      'image',
+      new Blob([new Uint8Array(imageBuffer)], {
+        type: this.inferAttachmentContentType(attachmentUrl),
+      }),
+      filename,
+    );
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), STAGE_ANALYSIS_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(`${aiBaseUrl}/predict-stage`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+    } catch {
+      throw new BadRequestException('Construction progress AI service is unavailable');
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new BadRequestException(
+        payload?.detail || payload?.message || payload?.error || 'Construction progress AI analysis failed',
+      );
+    }
+
+    return {
+      attachmentUrl,
+      fileName: filename,
+      predictedStage: payload?.predicted_stage || payload?.predictedStage || '',
+      estimatedProgress: Number(payload?.estimated_progress ?? payload?.estimatedProgress ?? 0),
+      confidence: Number(payload?.confidence ?? 0),
+      reviewStatus: payload?.review_status || payload?.reviewStatus || '',
+      reviewMessage: payload?.review_message || payload?.reviewMessage || '',
+      description: payload?.description || '',
+      topPredictions: Array.isArray(payload?.top_predictions)
+        ? payload.top_predictions.map((item: any) => ({
+            stage: item?.stage || '',
+            confidence: Number(item?.confidence ?? 0),
+          }))
+        : [],
+      analyzedAt: new Date().toISOString(),
+    };
+  }
+
+  private async analyzeMilestoneStageAttachments(milestone: Milestone): Promise<MilestoneStageAnalysis[]> {
+    const imageAttachments = this.getMilestoneImageAttachments(milestone);
+
+    return Promise.all(
+      imageAttachments.map(async (attachmentUrl) => {
+        try {
+          return await this.runStageAnalysisForAttachment(attachmentUrl);
+        } catch (error: any) {
+          return {
+            attachmentUrl,
+            fileName: this.getAttachmentFileName(attachmentUrl),
+            analyzedAt: new Date().toISOString(),
+            error: error?.message || 'Unable to analyze this image',
+          };
+        }
+      }),
+    );
+  }
+
+  private normalizePrototypeImageUrl(value?: string | null) {
+    if (value === undefined || value === null) return undefined;
+
+    const normalized = value.trim();
+    if (!normalized) return '';
+
+    if (!normalized.startsWith('/projects/uploads/')) {
+      throw new BadRequestException('Prototype image must be uploaded through the project upload endpoint');
+    }
+
+    if (!this.isImageAttachment(normalized)) {
+      throw new BadRequestException('Prototype attachment must be an image');
+    }
+
+    return normalized;
   }
 
   private async runAiAnalysisForAttachment(attachmentUrl: string): Promise<PpeAnalysisResult> {
@@ -437,6 +579,7 @@ async getGrowth(): Promise<number> {
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
     const budgetConsumed = dto.budgetConsumed || 0;
+    const prototypeImageUrl = this.normalizePrototypeImageUrl(dto.prototypeImageUrl) || '';
 
     this.assertProjectDates(startDate, endDate);
     this.assertProjectBudgets(dto.budgetPlanned, budgetConsumed);
@@ -457,6 +600,7 @@ async getGrowth(): Promise<number> {
       name: dto.name.trim(),
       code,
       description: dto.description || '',
+      prototypeImageUrl,
       budgetPlanned: dto.budgetPlanned,
       budgetConsumed,
       currency: dto.currency || 'USD',
@@ -506,6 +650,7 @@ async getGrowth(): Promise<number> {
     const nextEnd = dto.endDate ? new Date(dto.endDate) : project.endDate;
     const nextPlanned = dto.budgetPlanned ?? Number(project.budgetPlanned);
     const nextConsumed = dto.budgetConsumed ?? Number(project.budgetConsumed);
+    const nextPrototypeImageUrl = this.normalizePrototypeImageUrl(dto.prototypeImageUrl);
 
     this.assertProjectDates(nextStart, nextEnd);
     this.assertProjectBudgets(nextPlanned, nextConsumed);
@@ -525,6 +670,7 @@ async getGrowth(): Promise<number> {
       ...dto,
       startDate: nextStart,
       endDate: nextEnd,
+      prototypeImageUrl: nextPrototypeImageUrl !== undefined ? nextPrototypeImageUrl : project.prototypeImageUrl,
       siteAddress: dto.siteAddress?.trim() || project.siteAddress,
       latestValidationComment: dto ? project.latestValidationComment : project.latestValidationComment,
     });
@@ -978,6 +1124,7 @@ async getGrowth(): Promise<number> {
       plannedDate,
       createdByPmId: reqUser.mongoId,
       evidenceAttachments: this.normalizeEvidenceAttachments(dto.evidenceAttachments),
+      stageAnalyses: [],
       predecessorId: dto.predecessorId,
       status: MilestoneStatus.PLANNED,
     });
@@ -1060,6 +1207,39 @@ async getGrowth(): Promise<number> {
         .getOne();
 
       if (!qhseReport?.project) {
+        const prototypeProject = await this.projectsRepo.findOne({
+          where: { prototypeImageUrl: attachmentPath },
+        });
+
+        if (!prototypeProject) {
+          return false;
+        }
+
+        if (reqUser.role === 'SUPER_ADMIN') {
+          return true;
+        }
+
+        if (reqUser.role === 'PROJECT_MANAGER') {
+          return prototypeProject.projectManagerId === reqUser.mongoId;
+        }
+
+        if (reqUser.role === 'CLIENT') {
+          return prototypeProject.clientUserId === reqUser.mongoId;
+        }
+
+        if (reqUser.role === 'QHSE_MANAGER') {
+          return prototypeProject.qhseManagerId === reqUser.mongoId;
+        }
+
+        if (reqUser.role === 'DIRECTOR') {
+          try {
+            const company = await this.ensureDirectorCompany(reqUser.mongoId);
+            return prototypeProject.companyId === company.id;
+          } catch {
+            return false;
+          }
+        }
+
         return false;
       }
 
@@ -1150,6 +1330,7 @@ async getGrowth(): Promise<number> {
     } else if (!Array.isArray(milestone.evidenceAttachments)) {
       milestone.evidenceAttachments = [];
     }
+    milestone.stageAnalyses = await this.analyzeMilestoneStageAttachments(milestone);
     milestone.submittedAt = new Date();
     milestone.status = isResubmit
       ? MilestoneStatus.RESUBMITTED_FOR_CLIENT_VALIDATION
@@ -1290,6 +1471,31 @@ async getGrowth(): Promise<number> {
 
   async getClientProjects(reqUser: any) {
     return this.getClientScopedProjects(reqUser);
+  }
+
+  async getClientMilestoneStageAnalysis(milestoneId: string, reqUser: any) {
+    const milestone = await this.milestonesRepo.findOne({
+      where: { id: milestoneId },
+      relations: ['project'],
+    });
+
+    if (!milestone?.project) {
+      throw new NotFoundException('Milestone not found');
+    }
+
+    if (milestone.project.clientUserId !== reqUser.mongoId) {
+      throw new ForbiddenException('You can only view analysis for your assigned milestones');
+    }
+
+    if (!this.areStageAnalysesCurrent(milestone)) {
+      milestone.stageAnalyses = await this.analyzeMilestoneStageAttachments(milestone);
+      await this.milestonesRepo.save(milestone);
+    }
+
+    return {
+      milestoneId: milestone.id,
+      items: Array.isArray(milestone.stageAnalyses) ? milestone.stageAnalyses : [],
+    };
   }
 
   async getDirectorAvailableClients(reqUser: any) {

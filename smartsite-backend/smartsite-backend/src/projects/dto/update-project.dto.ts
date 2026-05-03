@@ -24,6 +24,11 @@ export class UpdateProjectDto {
   @IsOptional()
   description?: string;
 
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  prototypeImageUrl?: string;
+
   @IsNumber()
   @Min(0)
   @IsOptional()

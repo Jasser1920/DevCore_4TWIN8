@@ -4,12 +4,14 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   apiFetch,
   getClientMilestoneDecisionHistory,
+  getClientMilestoneStageAnalysis,
   getClientMilestoneValidationQueue,
   getClientProjects,
   getProjectMilestones,
   type MilestoneDecisionHistoryItem,
   resolveApiUrl,
   type MilestoneItem,
+  type MilestoneStageAnalysisItem,
   validateMilestoneByClient,
 } from '../lib/api'
 import { clearTokens, getAccessToken, getRefreshToken, getRolesFromToken, getBusinessRoles } from '../lib/auth'
@@ -890,7 +892,12 @@ export default function Client() {
                           <div style={{ fontSize: '13px', color: '#4b5563', marginTop: '8px' }}>
                             Evidence: {milestone.evidenceSummary || 'No evidence summary provided'}
                           </div>
-                          <AttachmentPreview attachments={milestone.evidenceAttachments || []} />
+                          <AttachmentPreview
+                            attachments={milestone.evidenceAttachments || []}
+                            milestoneId={milestone.id}
+                            initialStageAnalyses={milestone.stageAnalyses || []}
+                            showStageAnalysis
+                          />
                           <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                             <button
                               onClick={() => {
@@ -1039,7 +1046,12 @@ export default function Client() {
                                 Evidence: {milestone.evidenceSummary || 'No evidence summary provided'}
                               </div>
 
-                              <AttachmentPreview attachments={milestone.evidenceAttachments || []} />
+                              <AttachmentPreview
+                                attachments={milestone.evidenceAttachments || []}
+                                milestoneId={milestone.id}
+                                initialStageAnalyses={milestone.stageAnalyses || []}
+                                showStageAnalysis
+                              />
 
                               <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                                 <button
@@ -1367,12 +1379,36 @@ function MilestoneDecisionHistoryTimeline({ milestoneId }: { milestoneId: string
   )
 }
 
-function AttachmentPreview({ attachments }: { attachments: string[] }) {
+function AttachmentPreview({
+  attachments,
+  milestoneId,
+  initialStageAnalyses = [],
+  showStageAnalysis = false,
+}: {
+  attachments: string[]
+  milestoneId?: string
+  initialStageAnalyses?: MilestoneStageAnalysisItem[]
+  showStageAnalysis?: boolean
+}) {
   const [selectedAttachment, setSelectedAttachment] = useState(attachments[0] || '')
   const [previewUrl, setPreviewUrl] = useState('')
   const [previewError, setPreviewError] = useState('')
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const imageAttachments = useMemo(
+    () => attachments.filter((attachment) => isImageAttachmentUrl(attachment)),
+    [attachments],
+  )
+
+  const stageAnalysisQuery = useQuery({
+    queryKey: ['client-milestone-stage-analysis', milestoneId],
+    queryFn: async () => {
+      if (!milestoneId) return { milestoneId: '', items: [] as MilestoneStageAnalysisItem[] }
+      return getClientMilestoneStageAnalysis(milestoneId)
+    },
+    enabled: showStageAnalysis && !!milestoneId && imageAttachments.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
 
   useEffect(() => {
     setSelectedAttachment(attachments[0] || '')
@@ -1454,6 +1490,8 @@ function AttachmentPreview({ attachments }: { attachments: string[] }) {
   const lowerName = fileName.toLowerCase()
   const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(lowerName)
   const isPdf = lowerName.endsWith('.pdf')
+  const stageAnalyses = stageAnalysisQuery.data?.items || initialStageAnalyses
+  const selectedAnalysis = stageAnalyses.find((item) => item.attachmentUrl === selectedUrl)
 
   return (
     <div style={{ marginTop: '8px', display: 'grid', gap: '8px' }}>
@@ -1577,6 +1615,46 @@ function AttachmentPreview({ attachments }: { attachments: string[] }) {
         )}
       </div>
 
+      {showStageAnalysis && imageAttachments.length > 0 ? (
+        <div
+          style={{
+            border: '1px solid #dbeafe',
+            borderRadius: '10px',
+            backgroundColor: '#f8fafc',
+            padding: '10px',
+            display: 'grid',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Construction stage analysis</span>
+            {stageAnalysisQuery.isFetching ? (
+              <span style={{ fontSize: '11px', color: '#64748b' }}>Analyzing...</span>
+            ) : null}
+          </div>
+          {stageAnalysisQuery.isError ? (
+            <div style={{ fontSize: '12px', color: '#b91c1c' }}>
+              {(stageAnalysisQuery.error as Error).message || 'Unable to load stage analysis'}
+            </div>
+          ) : selectedAnalysis ? (
+            <StageAnalysisCard analysis={selectedAnalysis} isSelected />
+          ) : isImage ? (
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Stage analysis is not available for this image yet.</div>
+          ) : (
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Select an image attachment to view stage analysis.</div>
+          )}
+          {stageAnalyses.length > 1 ? (
+            <div style={{ display: 'grid', gap: '6px' }}>
+              {stageAnalyses
+                .filter((analysis) => analysis.attachmentUrl !== selectedUrl)
+                .map((analysis) => (
+                  <StageAnalysisCard key={analysis.attachmentUrl} analysis={analysis} />
+                ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {isModalOpen ? (
         <div
           onClick={() => setIsModalOpen(false)}
@@ -1650,6 +1728,89 @@ function AttachmentPreview({ attachments }: { attachments: string[] }) {
           </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function isImageAttachmentUrl(attachmentUrl: string) {
+  return /\.(png|jpe?g|gif|webp)$/i.test(attachmentUrl.split('?')[0] || attachmentUrl)
+}
+
+function formatStageLabel(stage?: string) {
+  if (!stage) return 'Unknown'
+  return stage
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function clampProgress(value?: number) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.min(Math.max(numeric, 0), 100)
+}
+
+function StageAnalysisCard({
+  analysis,
+  isSelected = false,
+}: {
+  analysis: MilestoneStageAnalysisItem
+  isSelected?: boolean
+}) {
+  const progress = clampProgress(analysis.estimatedProgress)
+  const confidenceValue = Number(analysis.confidence)
+  const confidence = Number.isFinite(confidenceValue) ? Math.round(confidenceValue * 100) : null
+
+  return (
+    <div
+      style={{
+        border: isSelected ? '1px solid #67e8f9' : '1px solid #e2e8f0',
+        borderRadius: '8px',
+        backgroundColor: isSelected ? '#ecfeff' : 'white',
+        padding: '9px',
+        display: 'grid',
+        gap: '7px',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', wordBreak: 'break-all' }}>
+          {analysis.fileName}
+        </span>
+        {confidence !== null && !analysis.error ? (
+          <span style={{ fontSize: '11px', color: '#0e7490', fontWeight: 700 }}>{confidence}% confidence</span>
+        ) : null}
+      </div>
+
+      {analysis.error ? (
+        <div style={{ fontSize: '12px', color: '#b91c1c' }}>{analysis.error}</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: '12px', color: '#334155' }}>
+            <span>
+              Stage: <strong>{formatStageLabel(analysis.predictedStage)}</strong>
+            </span>
+            <span>
+              Progress: <strong>{progress}%</strong>
+            </span>
+          </div>
+          <div style={{ height: '8px', borderRadius: '999px', backgroundColor: '#e2e8f0', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: `${progress}%`,
+                height: '100%',
+                borderRadius: '999px',
+                backgroundColor: progress >= 80 ? '#16a34a' : progress >= 45 ? '#0ea5e9' : '#f59e0b',
+              }}
+            />
+          </div>
+          {analysis.description ? (
+            <div style={{ fontSize: '12px', color: '#475569' }}>{analysis.description}</div>
+          ) : null}
+          {analysis.reviewMessage ? (
+            <div style={{ fontSize: '11px', color: '#64748b' }}>{analysis.reviewMessage}</div>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }

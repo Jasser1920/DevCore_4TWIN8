@@ -12,11 +12,12 @@ import {
   Req,
   UseGuards,
   StreamableFile,
+  UploadedFile,
   UploadedFiles,
   UseInterceptors,
   NotFoundException,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt/jwt.guard';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -42,6 +43,7 @@ import { ApiUsageService } from '../common/api-usage.service';
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads', 'milestone-evidence');
 const MAX_ATTACHMENT_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_PROTOTYPE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -50,14 +52,39 @@ const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
   'image/webp',
   'application/pdf',
 ]);
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+]);
 
 function ensureUploadsDir() {
   mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+function extensionFromMimeType(mimetype?: string) {
+  switch (mimetype?.toLowerCase?.()) {
+    case 'image/png':
+      return '.png';
+    case 'image/jpeg':
+    case 'image/jpg':
+      return '.jpg';
+    case 'image/gif':
+      return '.gif';
+    case 'image/webp':
+      return '.webp';
+    case 'application/pdf':
+      return '.pdf';
+    default:
+      return '';
+  }
+}
+
 function safeUploadName(file: MulterFile) {
   const originalName = basename(file.originalname || 'attachment');
-  const extension = extname(originalName) || '';
+  const extension = extname(originalName) || extensionFromMimeType(file.mimetype);
   const baseName = originalName.replace(extension, '').replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/^-+|-+$/g, '') || 'attachment';
   return `${Date.now()}-${randomUUID()}-${baseName}${extension}`;
 }
@@ -111,6 +138,44 @@ async getStorageUsage(@Req() req: any) {
 
     return this.projectsService.createProject(req.user, body, this.requestMeta(req));
   }
+
+  @Post('prototype-image/upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (_req, _file, callback) => {
+          ensureUploadsDir();
+          callback(null, UPLOADS_DIR);
+        },
+        filename: (_req, file, callback) => {
+          callback(null, safeUploadName(file));
+        },
+      }),
+      limits: {
+        fileSize: MAX_PROTOTYPE_IMAGE_SIZE_BYTES,
+      },
+      fileFilter: (_req, file, callback) => {
+        if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype?.toLowerCase?.() || '')) {
+          return callback(new BadRequestException('Only image files are allowed'), false);
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async uploadProjectPrototypeImage(@Req() req: any, @UploadedFile() file: MulterFile) {
+    if (req.user.role !== 'PROJECT_MANAGER') {
+      throw new ForbiddenException('Only PROJECT_MANAGER can upload project prototype images');
+    }
+
+    if (!file) {
+      throw new BadRequestException('An image file is required');
+    }
+
+    return {
+      data: `/projects/uploads/${file.filename}`,
+    };
+  }
+
 @Get('growth')
 async getGrowth(@Req() req: any) {
   if (req.user.role !== 'SUPER_ADMIN') {
@@ -347,6 +412,15 @@ async getRevenueByMonth(@Req() req: any) {
     }
 
     return this.projectsService.validateMilestoneByClient(id, req.user, body, this.requestMeta(req));
+  }
+
+  @Get('client/milestones/:id/stage-analysis')
+  async getClientMilestoneStageAnalysis(@Req() req: any, @Param('id') id: string) {
+    if (req.user.role !== 'CLIENT') {
+      throw new ForbiddenException('Only CLIENT can access milestone stage analysis');
+    }
+
+    return this.projectsService.getClientMilestoneStageAnalysis(id, req.user);
   }
 
   @Get('client/milestones/:id/decision-history')

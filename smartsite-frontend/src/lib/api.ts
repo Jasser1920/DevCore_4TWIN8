@@ -155,6 +155,7 @@ export type ProjectItem = {
   name: string
   code: string
   description?: string
+  prototypeImageUrl?: string | null
   projectManagerId: string
   directorId?: string
   clientUserId?: string | null
@@ -190,6 +191,7 @@ export type MilestoneItem = {
   plannedDate: string
   evidenceSummary?: string
   evidenceAttachments?: string[]
+  stageAnalyses?: MilestoneStageAnalysisItem[]
   submittedAt?: string
   validatedAt?: string
   clientValidationComment?: string
@@ -200,10 +202,25 @@ export type MilestoneItem = {
   updatedAt: string
 }
 
+export type MilestoneStageAnalysisItem = {
+  attachmentUrl: string
+  fileName: string
+  predictedStage?: string
+  estimatedProgress?: number
+  confidence?: number
+  reviewStatus?: string
+  reviewMessage?: string
+  description?: string
+  topPredictions?: Array<{ stage: string; confidence: number }>
+  analyzedAt: string
+  error?: string
+}
+
 export async function createProject(data: {
   name: string
   code?: string
   description?: string
+  prototypeImageUrl?: string
   budgetPlanned: number
   budgetConsumed?: number
   currency?: string
@@ -229,6 +246,7 @@ export async function generateAiProjectDescription(projectName: string) {
 export async function updateProject(projectId: string, data: {
   name?: string
   description?: string
+  prototypeImageUrl?: string
   budgetPlanned?: number
   budgetConsumed?: number
   currency?: string
@@ -282,6 +300,7 @@ export type DirectorProjectOverviewItem = {
   clientName?: string | null
   clientEmail?: string | null
   qhseManagerId?: string | null
+  prototypeImageUrl?: string | null
   budgetConsumptionPercent: number
   progressPercent: number
   risk: DirectorProjectRisk
@@ -480,6 +499,16 @@ export async function uploadMilestoneAttachments(files: File[]) {
   }).then((response) => response.data)
 }
 
+export async function uploadProjectPrototypeImage(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return apiFetch<{ data: string }>('/projects/prototype-image/upload', {
+    method: 'POST',
+    body: formData,
+  }).then((response) => response.data)
+}
+
 export async function getProjectMilestones(projectId: string) {
   return apiFetch<MilestoneItem[]>('/projects/' + projectId + '/milestones', {
     method: 'GET',
@@ -510,6 +539,15 @@ export async function getClientMilestoneValidationQueue() {
   return apiFetch<MilestoneItem[]>('/projects/client/milestones/validation-queue', {
     method: 'GET',
   })
+}
+
+export async function getClientMilestoneStageAnalysis(milestoneId: string) {
+  return apiFetch<{ milestoneId: string; items: MilestoneStageAnalysisItem[] }>(
+    '/projects/client/milestones/' + milestoneId + '/stage-analysis',
+    {
+      method: 'GET',
+    },
+  )
 }
 
 export async function validateMilestoneByClient(

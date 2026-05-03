@@ -16,6 +16,7 @@ import {
 import { useResponsive } from '../../../hooks/useResponsive'
 import { Status } from '../../../components/shared/UI'
 import PlanningControlView from './PlanningControlView'
+import ProtectedProjectImage from '../../../components/shared/ProtectedProjectImage'
 
 const riskColorMap: Record<DirectorProjectRisk, { bg: string; text: string; border: string }> = {
   LOW: { bg: '#ecfdf5', text: '#065f46', border: '#6ee7b7' },
@@ -743,6 +744,20 @@ function ProjectCard({ project, onSelect, selected }: { project: DirectorProject
     >
       <div style={{ fontWeight: 600, color: '#0f172a' }}>{project.name}</div>
       <div style={{ marginTop: '2px', fontSize: '12px', color: '#64748b' }}>{project.code}</div>
+      {project.prototypeImageUrl && (
+        <ProtectedProjectImage
+          attachmentUrl={project.prototypeImageUrl}
+          alt={`${project.name} prototype`}
+          style={{
+            width: '100%',
+            height: '118px',
+            objectFit: 'cover',
+            borderRadius: '8px',
+            border: '1px solid #e2e8f0',
+            marginTop: '10px',
+          }}
+        />
+      )}
       <div style={{ marginTop: '8px', fontSize: '12px', color: '#334155' }}>
         Status:{' '}
         <Status

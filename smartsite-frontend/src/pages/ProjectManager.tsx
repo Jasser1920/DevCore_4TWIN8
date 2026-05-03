@@ -1,6 +1,6 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   apiFetch,
@@ -18,6 +18,7 @@ import {
   submitQhseSiteReport,
   submitProject,
   uploadMilestoneAttachments,
+  uploadProjectPrototypeImage,
   updateProject,
   generateAiProjectDescription,
   generateAiMilestoneDescription,
@@ -39,10 +40,12 @@ import NotificationsPanel from '../components/NotificationsPanel'
 import ProjectLocationPickerMap from '../components/shared/ProjectLocationPickerMap'
 import GuidedTourOverlay from '../components/shared/GuidedTourOverlay'
 import FloatingTutorialButton from '../components/shared/FloatingTutorialButton'
-import { BrainCircuit } from 'lucide-react'
+import ProtectedProjectImage from '../components/shared/ProtectedProjectImage'
+import { BrainCircuit, ImagePlus, X } from 'lucide-react'
 
 const MAX_PM_ONGOING_PROJECTS = 3
 const MAX_QHSE_REPORT_IMAGES = 10
+const MAX_PROJECT_PROTOTYPE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
 const LayoutDashboard = ({ style }: { style?: React.CSSProperties }) => (
   <svg style={style} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -102,7 +105,11 @@ export default function ProjectManager() {
     latitude: '',
     longitude: '',
     siteAddress: '',
+    prototypeImageUrl: '',
   })
+  const prototypeImageInputRef = useRef<HTMLInputElement | null>(null)
+  const [prototypeImageFile, setPrototypeImageFile] = useState<File | null>(null)
+  const [prototypeImagePreviewUrl, setPrototypeImagePreviewUrl] = useState('')
   const [showMapPicker, setShowMapPicker] = useState(false)
   const [showGuidedTour, setShowGuidedTour] = useState(false)
   const [pageMessage, setPageMessage] = useState('')
@@ -144,6 +151,18 @@ export default function ProjectManager() {
 
     return merged.slice(0, MAX_QHSE_REPORT_IMAGES)
   }
+
+  useEffect(() => {
+    if (!prototypeImageFile) {
+      setPrototypeImagePreviewUrl('')
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(prototypeImageFile)
+    setPrototypeImagePreviewUrl(objectUrl)
+
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [prototypeImageFile])
 
   const projectsQuery = useQuery({
     queryKey: ['pm-projects'],
@@ -202,7 +221,13 @@ export default function ProjectManager() {
       latitude: '',
       longitude: '',
       siteAddress: '',
+      prototypeImageUrl: '',
     })
+    setPrototypeImageFile(null)
+    setPrototypeImagePreviewUrl('')
+    if (prototypeImageInputRef.current) {
+      prototypeImageInputRef.current.value = ''
+    }
     setMilestoneForm({
       name: '',
       plannedDate: '',
@@ -366,19 +391,62 @@ export default function ProjectManager() {
       latitude: project.latitude !== null && project.latitude !== undefined ? String(project.latitude) : '',
       longitude: project.longitude !== null && project.longitude !== undefined ? String(project.longitude) : '',
       siteAddress: project.siteAddress || '',
+      prototypeImageUrl: project.prototypeImageUrl || '',
     })
+    setPrototypeImageFile(null)
+    setPrototypeImagePreviewUrl('')
+    if (prototypeImageInputRef.current) {
+      prototypeImageInputRef.current.value = ''
+    }
     setFieldErrors({})
     setTouchedFields({})
     setFocusedField('')
     setPageError('')
   }
 
+  const handlePrototypeImageSelection = (file: File | null) => {
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setPageError('Project prototype must be an image file.')
+      setPageMessage('')
+      if (prototypeImageInputRef.current) {
+        prototypeImageInputRef.current.value = ''
+      }
+      return
+    }
+
+    if (file.size > MAX_PROJECT_PROTOTYPE_IMAGE_SIZE_BYTES) {
+      setPageError('Project prototype image must be 5 MB or smaller.')
+      setPageMessage('')
+      if (prototypeImageInputRef.current) {
+        prototypeImageInputRef.current.value = ''
+      }
+      return
+    }
+
+    setPrototypeImageFile(file)
+    setForm((previous) => ({ ...previous, prototypeImageUrl: '' }))
+    setPageError('')
+  }
+
+  const getPrototypeImageUrlForSave = async () => {
+    if (prototypeImageFile) {
+      return uploadProjectPrototypeImage(prototypeImageFile)
+    }
+
+    return form.prototypeImageUrl.trim() || undefined
+  }
+
   const createMutation = useMutation({
-    mutationFn: async () =>
-      createProject({
+    mutationFn: async () => {
+      const prototypeImageUrl = await getPrototypeImageUrlForSave()
+
+      return createProject({
         name: form.name.trim(),
         code: form.code.trim() || undefined,
         description: form.description.trim() || undefined,
+        prototypeImageUrl,
         budgetPlanned: Number(form.budgetPlanned),
         budgetConsumed: Number(form.budgetConsumed || 0),
         currency: form.currency.trim() || 'USD',
@@ -387,12 +455,18 @@ export default function ProjectManager() {
         latitude: Number(form.latitude),
         longitude: Number(form.longitude),
         siteAddress: form.siteAddress.trim() || undefined,
-      }),
+      })
+    },
     onSuccess: (project) => {
       setPageMessage(`Project ${project.name} created as draft.`)
       setPageError('')
       queryClient.invalidateQueries({ queryKey: ['pm-projects'] })
       setSelectedProjectId(project.id)
+      setForm((previous) => ({ ...previous, prototypeImageUrl: project.prototypeImageUrl || '' }))
+      setPrototypeImageFile(null)
+      if (prototypeImageInputRef.current) {
+        prototypeImageInputRef.current.value = ''
+      }
     },
     onError: (error: Error) => {
       setPageError(error.message || 'Failed to create project')
@@ -403,9 +477,12 @@ export default function ProjectManager() {
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!selectedProjectId) throw new Error('Select a project first')
+      const prototypeImageUrl = await getPrototypeImageUrlForSave()
+
       return updateProject(selectedProjectId, {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
+        prototypeImageUrl: prototypeImageUrl || '',
         budgetPlanned: Number(form.budgetPlanned),
         budgetConsumed: Number(form.budgetConsumed || 0),
         currency: form.currency.trim() || 'USD',
@@ -421,6 +498,11 @@ export default function ProjectManager() {
       setPageError('')
       queryClient.invalidateQueries({ queryKey: ['pm-projects'] })
       queryClient.invalidateQueries({ queryKey: ['project-feedback', selectedProjectId] })
+      setForm((previous) => ({ ...previous, prototypeImageUrl: project.prototypeImageUrl || '' }))
+      setPrototypeImageFile(null)
+      if (prototypeImageInputRef.current) {
+        prototypeImageInputRef.current.value = ''
+      }
     },
     onError: (error: Error) => {
       setPageError(error.message || 'Failed to update project')
@@ -933,6 +1015,104 @@ export default function ProjectManager() {
 
             <div
               style={{
+                border: '1px solid #e2e8f0',
+                backgroundColor: '#f8fafc',
+                borderRadius: '10px',
+                padding: '12px',
+                display: 'grid',
+                gap: '10px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Project prototype image
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    icon={ImagePlus}
+                    onClick={() => prototypeImageInputRef.current?.click()}
+                  >
+                    Choose Image
+                  </Button>
+                  {(prototypeImageFile || form.prototypeImageUrl) && (
+                    <Button
+                      variant="text"
+                      size="small"
+                      icon={X}
+                      onClick={() => {
+                        setPrototypeImageFile(null)
+                        setForm((previous) => ({ ...previous, prototypeImageUrl: '' }))
+                        if (prototypeImageInputRef.current) {
+                          prototypeImageInputRef.current.value = ''
+                        }
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <input
+                ref={prototypeImageInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                onChange={(event) => handlePrototypeImageSelection(event.target.files?.[0] || null)}
+                style={{ display: 'none' }}
+              />
+              {prototypeImagePreviewUrl ? (
+                <img
+                  src={prototypeImagePreviewUrl}
+                  alt="Selected project prototype"
+                  style={{
+                    width: '100%',
+                    height: '180px',
+                    objectFit: 'cover',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                  }}
+                />
+              ) : form.prototypeImageUrl ? (
+                <ProtectedProjectImage
+                  attachmentUrl={form.prototypeImageUrl}
+                  alt="Project prototype"
+                  style={{
+                    width: '100%',
+                    height: '180px',
+                    objectFit: 'cover',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    height: '118px',
+                    border: '1px dashed #cbd5e1',
+                    borderRadius: '8px',
+                    backgroundColor: '#ffffff',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '13px',
+                  }}
+                >
+                  No prototype image selected
+                </div>
+              )}
+              {prototypeImageFile && (
+                <span style={{ fontSize: '12px', color: '#475569' }}>
+                  {prototypeImageFile.name} ({(prototypeImageFile.size / 1024 / 1024).toFixed(2)} MB)
+                </span>
+              )}
+            </div>
+
+            <div
+              style={{
                 border: '1px solid #dbeafe',
                 backgroundColor: '#f0f9ff',
                 borderRadius: '10px',
@@ -1123,9 +1303,27 @@ export default function ProjectManager() {
                       }
                     }}
                   >
-                    <div style={{ fontWeight: 600, color: '#111827' }}>{project.name}</div>
-                    <div style={{ marginTop: '4px', fontSize: '12px', color: '#6b7280' }}>
-                      {project.code} | {project.status}
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      {project.prototypeImageUrl && (
+                        <ProtectedProjectImage
+                          attachmentUrl={project.prototypeImageUrl}
+                          alt={`${project.name} prototype`}
+                          style={{
+                            width: '58px',
+                            height: '46px',
+                            objectFit: 'cover',
+                            borderRadius: '6px',
+                            border: '1px solid #e2e8f0',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 600, color: '#111827' }}>{project.name}</div>
+                        <div style={{ marginTop: '4px', fontSize: '12px', color: '#6b7280' }}>
+                          {project.code} | {project.status}
+                        </div>
+                      </div>
                     </div>
                   </button>
                 ))}

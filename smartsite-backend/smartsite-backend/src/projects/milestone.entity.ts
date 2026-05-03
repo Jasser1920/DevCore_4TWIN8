@@ -18,6 +18,20 @@ export enum MilestoneStatus {
   RESUBMITTED_FOR_CLIENT_VALIDATION = 'RESUBMITTED_FOR_CLIENT_VALIDATION',
 }
 
+export type MilestoneStageAnalysis = {
+  attachmentUrl: string;
+  fileName: string;
+  predictedStage?: string;
+  estimatedProgress?: number;
+  confidence?: number;
+  reviewStatus?: string;
+  reviewMessage?: string;
+  description?: string;
+  topPredictions?: Array<{ stage: string; confidence: number }>;
+  analyzedAt: string;
+  error?: string;
+};
+
 @Entity('milestones')
 @Index(['projectId'])
 @Index(['companyId'])
@@ -50,6 +64,9 @@ export class Milestone {
 
   @Column({ type: 'jsonb', default: () => "'[]'" })
   evidenceAttachments: string[];
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  stageAnalyses: MilestoneStageAnalysis[];
 
   @Column({ type: 'timestamp', nullable: true })
   submittedAt: Date;
