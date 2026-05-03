@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Data and model training outputs
+data/
+runs/
+uploads/
+val_output.txt
+*.log
+*.cache
+*.tmp
+*.temp
+
+# Generated or local tooling files
+.codex/
+*.ipynb_checkpoints
+.DS_Store
+Thumbs.db
