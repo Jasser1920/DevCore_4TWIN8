@@ -14,6 +14,20 @@ services:
     depends_on:
       - backend
 
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: smartsite-jenkins
+    restart: always
+    ports:
+      - "8081:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    user: root
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+
   postgres_app:
     image: postgres:15
     container_name: smartsite-postgres-app
@@ -122,5 +136,6 @@ volumes:
   postgres_app_data:
   mongo_data:
   postgres_keycloak_data:
+  jenkins_data:
   
   
