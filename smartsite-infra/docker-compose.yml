@@ -1,15 +1,16 @@
-version: "3.9"
-
 services:
 
   frontend:
-    build: ../smartsite-frontend
+    build:
+      context: ../smartsite-frontend
+      args:
+        VITE_API_URL: http://localhost:3000
+        VITE_RECAPTCHA_SITE_KEY: 6LexbHosAAAAAA-0o_m20RsayxJE-9Zs8r2OWGZ_
+    image: ghcr.io/jasser1920/smartsite-frontend:latest
     container_name: smartsite-frontend
     restart: always
     ports:
-      - "5173:5173"
-    environment:
-      VITE_API_URL: http://localhost:3000
+      - "5173:80"
     depends_on:
       - backend
 
@@ -25,6 +26,11 @@ services:
       - "5433:5432"
     volumes:
       - postgres_app_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartsite -d smartsite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mongodb:
     image: mongo:7
@@ -34,6 +40,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres_keycloak:
     image: postgres:15
@@ -47,12 +58,17 @@ services:
       - "5432:5432"
     volumes:
       - postgres_keycloak_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartsite -d keycloak_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.2
     container_name: smartsite-keycloak
     restart: always
-    command: start-dev
+    command: start-dev --import-realm
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres_keycloak:5432/keycloak_db
@@ -62,19 +78,32 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
     ports:
       - "8080:8080"
+    volumes:
+      - ./keycloak-realm.json:/opt/keycloak/data/import/smartsite-realm.json
     depends_on:
-      - postgres_keycloak
+      postgres_keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q '1F90' /proc/net/tcp6"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
 
   backend:
     build: ../smartsite-backend/smartsite-backend
+    image: ghcr.io/jasser1920/smartsite-backend:latest
     container_name: smartsite-backend
     restart: always
     ports:
       - "3000:3000"
     depends_on:
-      - mongodb
-      - postgres_app
-      - keycloak
+      mongodb:
+        condition: service_healthy
+      postgres_app:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     env_file:
       - ../smartsite-backend/smartsite-backend/.env
     environment:

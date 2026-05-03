@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import  { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Bot, User, Loader2 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { exportUsersToPDF, exportCompaniesToPDF } from '../lib/pdfExport';

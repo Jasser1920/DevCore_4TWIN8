@@ -1,26 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../../lib/api'
 
-interface Company {
-  id: string
-  name: string
-  description: string
-  contactEmail: string
-  contactName: string
-  managerUserId: string
-  status: string
-  createdAt: string
-  updatedAt: string
-}
 
-interface Director {
-  id: string
-  username: string
-  email: string
-  firstName: string
-  lastName: string
-  isEmailVerified: boolean
-}
 
 interface CreateCompanyData {
   name: string

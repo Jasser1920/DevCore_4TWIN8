@@ -677,8 +677,7 @@ function KpiCard({ label, value }: { label: string; value: string }) {
 
 function ProjectCard({ project, onSelect, selected }: { project: DirectorProjectOverviewItem; onSelect: () => void; selected: boolean }) {
   const riskStyle = riskColorMap[project.risk];
-  // Use qhseManagers from closure (from parent component)
-  const qhseManagers = (typeof window !== 'undefined' && window.qhseManagers) || [];
+  const qhseManagers: DirectorQhseManagerItem[] = [];
   const getQhseManagerName = (qhseManagerId?: string | null) => {
     if (!qhseManagerId) return null;
     const manager = qhseManagers.find((m: any) => m.id === qhseManagerId);

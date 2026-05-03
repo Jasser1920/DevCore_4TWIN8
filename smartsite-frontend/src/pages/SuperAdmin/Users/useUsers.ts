@@ -1,17 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../../lib/api'
 
-interface User {
-  id: string
-  username: string
-  email: string
-  firstName: string
-  lastName: string
-  role: string
-  keycloakId: string
-  isEmailVerified: boolean
-}
-
 interface CreateUserData {
   username: string
   email: string

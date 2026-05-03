@@ -1,12 +1,10 @@
 ﻿ 
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
+import {  useQuery } from '@tanstack/react-query'
+import {  useMemo } from 'react'
 import { apiFetch } from '../../lib/api'
 import { exportUsersToPDF } from '../../lib/pdfExport'
 import MetricCard from '../../components/shared/UI/MetricCard'
 import Card from '../../components/shared/UI/Card'
-import EarningsLineChart from '../../components/charts/EarningsLineChart'
-import RevenueDoughnutChart from '../../components/charts/RevenueDoughnutChart'
 import { useResponsive } from '../../hooks/useResponsive'
 import { Button } from '../../components/shared/UI'
 import { Activity, TrendingUp, Users, Building2, Database, Download } from 'lucide-react'
@@ -34,13 +32,12 @@ function formatStorage(bytes: number) {
 
 export default function Dashboard() {
   const { isMobile } = useResponsive()
-  const [profileMessage, setProfileMessage] = useState('')
 
   // Fetch users
   const {
     data: usersData,
     isLoading: usersLoading,
-    error: usersError,
+    
   } = useQuery({
     queryKey: ['users'],
     queryFn: () => apiFetch<{ users: User[] }>('/users/list'),
@@ -61,7 +58,6 @@ export default function Dashboard() {
   const {
     data: companiesData,
     isLoading: companiesLoading,
-    error: companiesError,
   } = useQuery({
     queryKey: ['companies'],
     queryFn: () => apiFetch<{ data: any[] }>('/companies'),
@@ -95,7 +91,6 @@ export default function Dashboard() {
   const {
     data: projectsData,
     isLoading: projectsLoading,
-    error: projectsError,
   } = useQuery({
     queryKey: ['projects-count'],
     queryFn: () => apiFetch<{ count: number }>('/projects'),
@@ -106,7 +101,6 @@ export default function Dashboard() {
   const {
     data: growthData,
     isLoading: growthLoading,
-    error: growthError,
   } = useQuery({
     queryKey: ['growth'],
     queryFn: () => apiFetch<{ growth: number }>('/projects/growth'),
@@ -117,7 +111,6 @@ export default function Dashboard() {
   const {
     data: storageData,
     isLoading: storageLoading,
-    error: storageError,
   } = useQuery({
     queryKey: ['storage-usage'],
     queryFn: () => apiFetch<{ used: number; total: number }>('/projects/storage-usage'),
