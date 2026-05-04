@@ -16,6 +16,13 @@ interface Company {
   createdAt: string
 }
 
+interface Director {
+  id: string
+  firstName: string
+  lastName: string
+  isEmailVerified: boolean
+}
+
 interface EditCompanyModalProps {
   company: Company
   onClose: () => void
@@ -172,7 +179,7 @@ export default function EditCompanyModal({ company, onClose }: EditCompanyModalP
             onChange={(value) => handleFieldChange('managerUserId', value)}
             options={[
               { value: '', label: directorsLoading ? 'Loading directors...' : 'Select a director' },
-              ...directors.map(director => ({
+              ...directors.map((director: Director) => ({
                 value: director.id,
                 label: director.isEmailVerified 
                   ? `${director.firstName} ${director.lastName} - Director` 

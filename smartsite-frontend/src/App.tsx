@@ -17,6 +17,7 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotificationToast } from './hooks/useNotificationToast'
 import { defaultRouteByRole, type AppRole } from './lib/notificationRoutes'
+import SiteBrainChatbot from './components/SiteBrainChatbot'
 
 function App() {
   const [toast, setToast] = useState<{
@@ -52,6 +53,7 @@ function App() {
           onClose={() => setToast(null)}
         />
       )}
+       <SiteBrainChatbot />
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />

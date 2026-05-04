@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-multipart
+opencv-python-headless
+numpy
+pydantic
+requests
+torch --index-url https://download.pytorch.org/whl/cpu
+torchvision --index-url https://download.pytorch.org/whl/cpu
+ultralytics

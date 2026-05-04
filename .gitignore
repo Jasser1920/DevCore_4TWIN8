@@ -13,3 +13,4 @@ smartsite-ai/runs/**
 !smartsite-ai/runs/detect/train2/
 !smartsite-ai/runs/detect/train2/weights/
 !smartsite-ai/runs/detect/train2/weights/best.pt
+

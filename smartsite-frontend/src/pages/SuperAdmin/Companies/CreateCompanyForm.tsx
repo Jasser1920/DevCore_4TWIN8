@@ -5,6 +5,13 @@ import { useResponsive } from '../../../hooks/useResponsive'
 import { useCompanies } from './useCompanies'
 import { Building2 } from 'lucide-react'
 
+interface Director {
+  id: string
+  firstName: string
+  lastName: string
+  isEmailVerified: boolean
+}
+
 export default function CreateCompanyForm() {
   const { isMobile } = useResponsive()
   const { 
@@ -227,7 +234,7 @@ export default function CreateCompanyForm() {
               onChange={(value) => handleFieldChange('managerUserId', value)}
               options={[
                 { value: '', label: directorsLoading ? 'Loading directors...' : 'Select a director' },
-                ...directors.map(director => ({
+                ...directors.map((director: Director) => ({
                   value: director.id,
                   label: director.isEmailVerified 
                     ? `${director.firstName} ${director.lastName} - Director` 

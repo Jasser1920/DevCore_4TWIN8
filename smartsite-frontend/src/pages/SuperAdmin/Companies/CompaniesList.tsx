@@ -18,6 +18,13 @@ interface Company {
   updatedAt: string
 }
 
+interface Director {
+  id: string
+  firstName: string
+  lastName: string
+  isEmailVerified: boolean
+}
+
 export default function CompaniesList() {
   const { companies, isLoading, deleteCompany, directors } = useCompanies()
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
@@ -33,7 +40,7 @@ export default function CompaniesList() {
   }, [])
 
   const handleExportCompanies = () => {
-    const companiesWithDirector = companies.map(company => ({
+    const companiesWithDirector = companies.map((company: Company) => ({
       ...company,
       directorName: getDirectorName(company.managerUserId)
     }))
@@ -49,7 +56,7 @@ export default function CompaniesList() {
 
   // Find director name for a company
   const getDirectorName = (managerUserId: string) => {
-    const director = directors.find(d => d.id === managerUserId)
+    const director = directors.find((d: Director) => d.id === managerUserId)
     if (director) {
       return `${director.firstName} ${director.lastName}`
     }
