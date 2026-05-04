@@ -10,12 +10,21 @@ from uuid import uuid4
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-MODEL_PATH = BASE_DIR / "runs" / "classify" / "train-3" / "weights" / "best.pt"
+MODEL_PATH = Path(
+    os.getenv(
+        "SMARTSITE_PROGRESS_MODEL_PATH",
+        str(BASE_DIR / "models" / "construction-stage-classifier.pt"),
+    )
+)
 
 if not MODEL_PATH.exists():
     raise FileNotFoundError(f"Model not found at: {MODEL_PATH}")
 
 model = YOLO(str(MODEL_PATH))
+if model.task != "classify":
+    raise ValueError(
+        f"SmartSite progress model must be a classification model, got task={model.task!r}"
+    )
 
 
 PROGRESS_MAP = {
@@ -81,6 +90,8 @@ def predict_image_path(image_path: str):
     result = results[0]
     probs = result.probs
     names = result.names
+    if probs is None:
+        raise ValueError("SmartSite progress model did not return classification probabilities")
 
     scores = probs.data.tolist()
     ranking = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
