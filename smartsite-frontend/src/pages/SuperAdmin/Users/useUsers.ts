@@ -42,11 +42,11 @@ interface CreateUserResponse {
 export function useUsers() {
   const queryClient = useQueryClient()
 
-  const usersQuery = useQuery({
+  const usersQuery = useQuery<User[]>({
     queryKey: ['users'],
-    queryFn: async () => {
+    queryFn: async (): Promise<User[]> => {
       try {
-        const data = await apiFetch<any>('/users/list', { method: 'GET' })
+        const data = await apiFetch<User[] | { users?: User[]; data?: User[] }>('/users/list', { method: 'GET' })
         console.log('Users API response:', data)
         
         if (Array.isArray(data)) {

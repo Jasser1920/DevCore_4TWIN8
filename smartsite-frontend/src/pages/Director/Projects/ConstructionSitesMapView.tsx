@@ -14,8 +14,6 @@ const statusColor: Record<string, string> = {
   SUBMITTED_FOR_VALIDATION: '#d97706',
 }
 
-const defaultCenter: [number, number] = [36.8065, 10.1815]
-
 function getSiteStatusLabel(status: string) {
   const labels: Record<string, string> = {
     APPROVED: 'Approved',

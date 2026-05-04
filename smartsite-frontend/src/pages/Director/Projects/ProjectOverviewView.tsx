@@ -295,6 +295,7 @@ export default function ProjectOverviewView() {
                     project={project}
                     onSelect={() => setSelectedProjectId(project.id)}
                     selected={project.id === selectedProjectId}
+                    getQhseManagerName={getQhseManagerName}
                   />
                 ))}
               </div>
@@ -720,16 +721,18 @@ function KpiCard({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ProjectCard({ project, onSelect, selected }: { project: DirectorProjectOverviewItem; onSelect: () => void; selected: boolean }) {
+function ProjectCard({
+  project,
+  onSelect,
+  selected,
+  getQhseManagerName,
+}: {
+  project: DirectorProjectOverviewItem
+  onSelect: () => void
+  selected: boolean
+  getQhseManagerName: (qhseManagerId?: string | null) => string | null
+}) {
   const riskStyle = riskColorMap[project.risk];
-  // Use qhseManagers from closure (from parent component)
-  const qhseManagers = (typeof window !== 'undefined' && window.qhseManagers) || [];
-  const getQhseManagerName = (qhseManagerId?: string | null) => {
-    if (!qhseManagerId) return null;
-    const manager = qhseManagers.find((m: any) => m.id === qhseManagerId);
-    if (!manager) return qhseManagerId;
-    return `${manager.firstName || ''} ${manager.lastName || ''}`.trim() || manager.username || manager.email || qhseManagerId;
-  };
   return (
     <button
       onClick={onSelect}

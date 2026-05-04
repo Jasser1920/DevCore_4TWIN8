@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { MapContainer, TileLayer, Marker, CircleMarker, useMapEvents, useMap } from 'react-leaflet'
+import { useState, useEffect } from 'react'
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { Search, Navigation, MapPin, Loader2, Target, Crosshair } from 'lucide-react'
+import { Search, MapPin, Loader2, Target, Crosshair } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 
 type ProjectLocationPickerMapProps = {

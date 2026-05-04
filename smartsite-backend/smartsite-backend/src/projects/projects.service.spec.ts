@@ -9,9 +9,11 @@ import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { UsersService } from '../users/users.service';
 import { StrategicVision } from '../strategic-vision/strategic-vision.entity';
 import { BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Milestone, MilestoneStatus } from './milestone.entity';
 import { QhseSiteReport } from './qhse-site-report.entity';
 import { QhseCorrectiveAction } from './qhse-corrective-action.entity';
+import { EmailService } from '../core/email.service';
 
 describe('ProjectsService', () => {
   let service: ProjectsService;
@@ -97,6 +99,16 @@ describe('ProjectsService', () => {
         {
           provide: UsersService,
           useValue: usersServiceMock,
+        },
+        {
+          provide: EmailService,
+          useValue: {},
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn(),
+          },
         },
       ],
     }).compile();

@@ -404,6 +404,14 @@ export type DirectorConstructionSiteItem = {
   projectManagerId: string
   projectManagerName: string
   projectManagerEmail: string
+  budgetPlanned: number
+  budgetConsumed: number
+  budgetConsumptionPercent: number
+  progressPercent: number
+  risk: DirectorProjectRisk
+  currency: string
+  startDate: string
+  endDate: string
   updatedAt: string
 }
 

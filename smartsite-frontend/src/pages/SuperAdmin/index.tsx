@@ -17,11 +17,10 @@ import Sidebar from '../../components/shared/Sidebar'
 import GuidedTourOverlay from '../../components/shared/GuidedTourOverlay'
 import FloatingTutorialButton from '../../components/shared/FloatingTutorialButton'
 import Dashboard from './Dashboard'
-import { CreateUserForm, UsersList, useUsers } from './Users'
+import { CreateUserForm, UsersList } from './Users'
 import { CompaniesList, CreateCompanyForm } from './Companies'
 import ActivityLogsView from './ActivityLogs/ActivityLogsView'
 import SettingsView from './Settings/SettingsView'
-import { useCompanies } from './Companies/useCompanies'
 import NotificationsPanel from '../../components/NotificationsPanel'
 
 // Icon Components
@@ -72,10 +71,6 @@ export default function SuperAdmin() {
   
   const tokenRoles = getRolesFromToken(getAccessToken())
   const businessRoles = getBusinessRoles(tokenRoles)
-
-  // Fetch data for dashboard
-  const { users } = useUsers()
-  const { companies } = useCompanies()
 
   // Protect this page - only Super Admin can access
   useEffect(() => {
@@ -288,7 +283,7 @@ export default function SuperAdmin() {
         >
           {currentPage === 'dashboard' && (
             <div data-tour="sa-page-dashboard">
-              <Dashboard usersCount={users.length} companiesCount={companies.length} users={users} />
+              <Dashboard />
             </div>
           )}
 

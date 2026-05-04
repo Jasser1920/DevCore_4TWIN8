@@ -42,11 +42,11 @@ interface UpdateCompanyData {
 export function useCompanies() {
   const queryClient = useQueryClient()
 
-  const companiesQuery = useQuery({
+  const companiesQuery = useQuery<Company[]>({
     queryKey: ['companies'],
-    queryFn: async () => {
+    queryFn: async (): Promise<Company[]> => {
       try {
-        const data = await apiFetch<any>('/companies', { method: 'GET' })
+        const data = await apiFetch<Company[] | { data?: Company[]; companies?: Company[] }>('/companies', { method: 'GET' })
         console.log('Companies API response:', data)
         
         if (Array.isArray(data)) {
@@ -70,11 +70,11 @@ export function useCompanies() {
     },
   })
 
-  const directorsQuery = useQuery({
+  const directorsQuery = useQuery<Director[]>({
     queryKey: ['directors'],
-    queryFn: async () => {
+    queryFn: async (): Promise<Director[]> => {
       try {
-        const data = await apiFetch<any>('/companies/managers/available', { method: 'GET' })
+        const data = await apiFetch<Director[] | { data?: Director[]; directors?: Director[] }>('/companies/managers/available', { method: 'GET' })
         console.log('Directors API response:', data)
         
         if (Array.isArray(data)) {

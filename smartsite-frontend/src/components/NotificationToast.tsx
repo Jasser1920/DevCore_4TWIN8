@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, X, Info } from 'lucide-react';
+import { Bell, X } from 'lucide-react';
 
 interface NotificationToastProps {
   title: string;

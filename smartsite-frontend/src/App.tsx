@@ -16,7 +16,7 @@ import NotificationToast from './components/NotificationToast'
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotificationToast } from './hooks/useNotificationToast'
-import { resolveNotificationRoute, defaultRouteByRole, type AppRole } from './lib/notificationRoutes'
+import { defaultRouteByRole, type AppRole } from './lib/notificationRoutes'
 
 function App() {
   const [toast, setToast] = useState<{
