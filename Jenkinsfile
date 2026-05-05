@@ -35,6 +35,17 @@ pipeline {
             }
         }
 
+        stage('SonarQube Analysis') {
+            steps {
+                dir('smartsite-backend/smartsite-backend') {
+                    def scannerHome = tool 'SonarScanner'
+                    withSonarQubeEnv('SonarQube') {
+                        sh "${scannerHome}/bin/sonar-scanner"
+                    }
+                }
+            }
+        }
+
         stage('Build Images') {
             steps {
                 sh 'docker build -t $DOCKER_HUB_USERNAME/smartsite-backend:$IMAGE_TAG smartsite-backend/smartsite-backend'
