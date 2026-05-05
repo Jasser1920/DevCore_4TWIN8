@@ -142,10 +142,25 @@ services:
       - smartsite_net
     restart: unless-stopped
 
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    user: root
+    ports:
+      - "8081:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - smartsite_net
+    restart: unless-stopped
+
 volumes:
   pg_app_data:
   mongo_app_data:
   pg_keycloak_data:
+  jenkins_data:
 
 networks:
   smartsite_net:
