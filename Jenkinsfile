@@ -38,9 +38,8 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 dir('smartsite-backend/smartsite-backend') {
-                    def scannerHome = tool 'SonarScanner'
                     withSonarQubeEnv('SonarQube') {
-                        sh "${scannerHome}/bin/sonar-scanner"
+                        sh "${tool 'SonarScanner'}/bin/sonar-scanner"
                     }
                 }
             }
