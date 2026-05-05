@@ -26,10 +26,23 @@ export class InitService implements OnModuleInit {
     private config: ConfigService,
   ) {}
 
+  private async waitForKeycloak(retries = 10, delayMs = 5000): Promise<string> {
+    for (let i = 1; i <= retries; i++) {
+      try {
+        return await this.authService.getAdminToken();
+      } catch (error: any) {
+        console.warn(`Keycloak not ready, attempt ${i}/${retries}. Retrying in ${delayMs / 1000}s...`);
+        if (i === retries) throw error;
+        await new Promise((res) => setTimeout(res, delayMs));
+      }
+    }
+    throw new Error('Keycloak never became ready');
+  }
+
   async onModuleInit() {
     try {
       console.log('Initializing system users...');
-      const adminToken = await this.authService.getAdminToken();
+      const adminToken = await this.waitForKeycloak();
       await this.initializeSuperAdmin(adminToken);
       await this.initializeRoleBasedUsers(adminToken);
       console.log('System initialization completed');

@@ -86,8 +86,8 @@ export class AuthService {
     try {
       const normalizedUsername = (username || '').trim().replace(/^['\"]+|['\"]+$/g, '');
 
-      // Only verify CAPTCHA if token is provided (skip for internal calls like updatePassword)
-      if (captchaToken) {
+      // Only verify CAPTCHA in production
+      if (captchaToken && process.env.NODE_ENV === 'production') {
         await this.verifyCaptchaToken(captchaToken, ipAddress);
       }
 

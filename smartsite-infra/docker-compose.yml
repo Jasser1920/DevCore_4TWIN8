@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    image: quay.io/keycloak/keycloak:26.0
     container_name: keycloak
     command: start-dev
     environment:
@@ -70,12 +70,13 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
       REALM: smartsite-realm
       CLIENT_ID: smartsite-backend
-      CLIENT_SECRET: qLOh0lnrbSCJrO8rnL7LDjQV5okIC8kM
+      CLIENT_SECRET: Rmc4EtpS3uaEzWx9Nq1TkzXQkuASeVc2
       KEYCLOAK_ADMIN_USERNAME: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       FRONTEND_URL: http://localhost:5173
       JWT_SECRET: your-super-secret-key-12345
       SMARTSITE_PROGRESS_AI_URL: http://prog_service:8001
+      AI_API_URL: http://ai_service:8000
       GMAIL_USER: devcoresmartsite@gmail.com
       GMAIL_PASSWORD: fxbz waet lzri epmk
       RECAPTCHA_SECRET_KEY: 6LexbHosAAAAAMEqP0U86mikr9MtbL86TEPq6uAx
@@ -119,8 +120,27 @@ services:
       - smartsite_net
     restart: unless-stopped
 
-  # ai_service and prog_service excluded for now (torch download too slow)
-  # re-enable after demo
+  ai_service:
+    build:
+      context: ../smartsite-ai
+    container_name: ai_service
+    environment:
+      GEMINI_API_KEY: AIzaSyAliCCqbkzFe72VN7xRakgwXwwGPtEJcwQ
+    ports:
+      - "8000:8000"
+    networks:
+      - smartsite_net
+    restart: unless-stopped
+
+  prog_service:
+    build:
+      context: ../Smartsite-prog
+    container_name: prog_service
+    ports:
+      - "8001:8001"
+    networks:
+      - smartsite_net
+    restart: unless-stopped
 
 volumes:
   pg_app_data:
